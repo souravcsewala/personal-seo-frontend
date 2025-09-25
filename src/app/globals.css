@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+[data-theme="light"] {
+  --background: #ffffff;
+  --foreground: #171717;
+  --primary-color: #C96442;
+  --primary-light: #C96442;
+  --primary-dark: #A54F35;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary-color);
+  --color-primary-light: var(--primary-light);
+  --color-primary-dark: var(--primary-dark);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+[data-theme="dark"] {
+  --background: #000000;
+  --foreground: #ffffff;
+  --primary-color: #C96442;
+  --primary-light: #C96442;
+  --primary-dark: #C96442;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Force common surfaces to follow theme variables */
+.bg-white { background-color: var(--background) !important; }
+.bg-gray-50 { background-color: var(--background) !important; }
+.text-gray-900 { color: var(--foreground) !important; }
+.text-gray-700 { color: color-mix(in srgb, var(--foreground) 80%, transparent) !important; }
+.text-gray-600 { color: color-mix(in srgb, var(--foreground) 65%, transparent) !important; }
+.text-gray-500 { color: color-mix(in srgb, var(--foreground) 55%, transparent) !important; }
+.border-gray-200 { border-color: color-mix(in srgb, var(--foreground) 15%, transparent) !important; }
+.hover\:bg-gray-50:hover { background-color: color-mix(in srgb, var(--foreground) 6%, transparent) !important; }
+.hover\:bg-gray-100:hover { background-color: color-mix(in srgb, var(--foreground) 10%, transparent) !important; }
+.bg-\[\#C96442\] { background-color: var(--primary-color) !important; }
+.text-\[\#C96442\] { color: var(--primary-color) !important; }
+
+/* Dark mode specific overrides */
+[data-theme="dark"] .bg-gray-50 { background-color: #141414 !important; }
+[data-theme="dark"] .bg-\[\#F3F5F7\] { background-color: #141414 !important; }
+[data-theme="dark"] .hover\:bg-\[\#C96442\]:hover { background-color: var(--primary-color) !important; }
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+
+
+}
+
+::-webkit-scrollbar-thumb {
+  background: #5c352867;
+  border-radius: 4px;
+  min-height: 50px;
+  
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #A54F35;
+}
+
+/* Custom focus styles */
+.focus-ring:focus {
+  outline: 2px solid #C96442;
+  outline-offset: 2px;
+}
+
+/* Animation classes */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
