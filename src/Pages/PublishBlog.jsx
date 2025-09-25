@@ -8,8 +8,8 @@ import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import Footer from '../components/layout/Footer';
 import LoginModal from '../components/auth/LoginModal';
-import { Editor } from '@tinymce/tinymce-react';
-import { tinymceConfig, TINYMCE_API_KEY } from '../components/common/tinymceConfig';
+import dynamic from 'next/dynamic';
+const QuillEditor = dynamic(() => import('../components/common/QuillEditor'), { ssr: false });
 import { useApp } from '../context/AppContext';
 import { prodServerUrl } from '../global/server';
 
@@ -339,14 +339,13 @@ export default function PublishBlog() {
                   <label htmlFor="content" className="block text-sm font-medium text-gray-700 mb-2">
                     Content *
                   </label>
-                  <Editor
-                    apiKey={TINYMCE_API_KEY}
+                  <QuillEditor
                     value={formData.content}
-                    init={tinymceConfig(450)}
-                    onEditorChange={(content) => {
+                    onChange={(content) => {
                       setFormData(prev => ({ ...prev, content }));
                       setContentWordCount(countWordsFromHtml(content));
                     }}
+                    height={450}
                   />
                   <p className="text-sm text-gray-500 mt-2">
                     Use the formatting toolbar to style your content. You can add headings, lists, tables, images, links, and more.

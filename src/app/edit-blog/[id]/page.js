@@ -7,8 +7,8 @@ import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
 import { useSelector } from "react-redux";
 import { prodServerUrl } from "../../../global/server";
-import { Editor } from "@tinymce/tinymce-react";
-import { tinymceConfig, TINYMCE_API_KEY } from "../../../components/common/tinymceConfig";
+import dynamic from 'next/dynamic';
+const QuillEditor = dynamic(() => import('../../../components/common/QuillEditor'), { ssr: false });
 
 export default function EditBlogPage() {
   const params = useParams();
@@ -204,7 +204,7 @@ export default function EditBlogPage() {
               </div>
 
               <label className="block text-sm font-medium text-gray-700">Content *</label>
-              <Editor apiKey={TINYMCE_API_KEY} value={form.content} init={tinymceConfig(450)} onEditorChange={(content)=>{ setForm(v=>({...v, content})); setContentWordCount(countWordsFromHtml(content)); }} />
+              <QuillEditor value={form.content} onChange={(content)=>{ setForm(v=>({...v, content})); setContentWordCount(countWordsFromHtml(content)); }} height={450} />
               <p className={`text-sm mt-1 ${contentWordCount < MIN_WORDS ? 'text-red-600' : 'text-gray-600'}`}>Words: {contentWordCount} {contentWordCount < MIN_WORDS ? `(minimum ${MIN_WORDS})` : ''}</p>
 
               {/* Policy */}

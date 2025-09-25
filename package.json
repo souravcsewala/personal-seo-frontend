@@ -11,7 +11,6 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.9.0",
     "@tailwindcss/typography": "^0.5.18",
-    "@tinymce/tinymce-react": "^6.3.0",
     "axios": "^1.12.2",
     "jwt-decode": "^4.0.0",
     "next": "15.5.3",
