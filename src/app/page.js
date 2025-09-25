@@ -2,6 +2,10 @@ import Home from '../Pages/Home';
 import { prodServerUrl } from '../global/server';
 import { buildMeta } from '../utils/seo';
 
+// Force dynamic rendering to avoid prerender/export errors
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function Page() {
   let initialFeed = [];
   try {
