@@ -1,6 +1,6 @@
 
-               const prodServerUrl ="http://localhost:7080/api";
+               // const prodServerUrl ="http://localhost:7080/api";
 
-                  // const prodServerUrl="https://farz-academy-backend.onrender.com/sisyphus/project5/api"
+                 const prodServerUrl="https://personal-seo-backend.onrender.com/api"
 
 export { prodServerUrl };
