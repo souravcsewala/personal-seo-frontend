@@ -13,7 +13,8 @@ export default function SearchPage() {
   const q = params?.get('q') || '';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState([]); // blogs
+  const [qItems, setQItems] = useState([]); // questions
 
   useEffect(() => {
     let mounted = true;
@@ -21,13 +22,18 @@ export default function SearchPage() {
       if (!q) { setItems([]); return; }
       setLoading(true); setError('');
       try {
-        const { data } = await axios.get(`${prodServerUrl}/blogs/search`, { params: { q, limit: 30 } });
+        const [blogsRes, questionsRes] = await Promise.all([
+          axios.get(`${prodServerUrl}/blogs/search`, { params: { q, limit: 30 } }),
+          axios.get(`${prodServerUrl}/questions`, { params: { q, limit: 30 } }),
+        ]);
         if (!mounted) return;
-        setItems(Array.isArray(data?.data) ? data.data : []);
+        setItems(Array.isArray(blogsRes?.data?.data) ? blogsRes.data.data : []);
+        setQItems(Array.isArray(questionsRes?.data?.data) ? questionsRes.data.data : []);
       } catch (err) {
         if (!mounted) return;
         setError(err?.response?.data?.message || err.message || 'Search failed');
         setItems([]);
+        setQItems([]);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -58,23 +64,55 @@ export default function SearchPage() {
             <p className="text-sm text-gray-600 mb-6">Query: {q}</p>
             {loading && (<div className="text-gray-600">Searching...</div>)}
             {error && (<div className="text-red-700 bg-red-50 border border-red-200 p-3 rounded mb-4">{error}</div>)}
-            <div className="space-y-4">
-              {items.map((b) => (
-                <article key={b._id} onClick={() => router.push(`/blog/${encodeURIComponent(b.slug || b._id)}`)} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <h2 className="font-semibold text-gray-900">{b.title}</h2>
-                  <p className="text-sm text-gray-600 line-clamp-2">{b.metaDescription}</p>
-                  <div className="flex items-center space-x-2 text-xs text-gray-500 mt-2">
-                    <span>{b?.author?.fullname || 'Unknown'}</span>
-                    <span>•</span>
-                    <span>{b?.category?.name || ''}</span>
-                    <span>•</span>
-                    <span>{b?.createdAt ? new Date(b.createdAt).toLocaleDateString() : ''}</span>
-                  </div>
-                </article>
-              ))}
-              {!loading && !error && items.length === 0 && (
-                <div className="text-gray-600">No results found.</div>
-              )}
+            <div className="space-y-8">
+              <section>
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Blogs ({items.length})</h2>
+                <div className="space-y-4">
+                  {items.map((b) => (
+                    <article key={b._id} onClick={() => router.push(`/blog/${encodeURIComponent(b.slug || b._id)}`)} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <h3 className="font-semibold text-gray-900">{b.title}</h3>
+                      <p className="text-sm text-gray-600 line-clamp-2">{b.metaDescription}</p>
+                      <div className="flex items-center space-x-2 text-xs text-gray-500 mt-2">
+                        <span>{b?.author?.fullname || 'Unknown'}</span>
+                        <span>•</span>
+                        <span>{b?.category?.name || ''}</span>
+                        <span>•</span>
+                        <span>{b?.createdAt ? new Date(b.createdAt).toLocaleDateString() : ''}</span>
+                      </div>
+                    </article>
+                  ))}
+                  {!loading && !error && items.length === 0 && (
+                    <div className="text-gray-600">No blog results.</div>
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <h2 className="text-lg font-semibold text-gray-900 mb-3">Questions ({qItems.length})</h2>
+                <div className="space-y-4">
+                  {qItems.map((qq) => {
+                    const raw = String(qq?.description || '');
+                    const plain = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                    const snippet = plain.length > 160 ? plain.slice(0, 157) + '…' : plain;
+                    return (
+                      <article key={qq._id} onClick={() => router.push(`/question/${encodeURIComponent(qq.slug || qq._id)}`)} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                        <h3 className="font-semibold text-gray-900">{qq.title}</h3>
+                        <p className="text-sm text-gray-600 line-clamp-2">{snippet}</p>
+                        <div className="flex items-center space-x-2 text-xs text-gray-500 mt-2">
+                          <span>{qq?.author?.fullname || 'Unknown'}</span>
+                          <span>•</span>
+                          <span>{qq?.category?.name || ''}</span>
+                          <span>•</span>
+                          <span>{qq?.createdAt ? new Date(qq.createdAt).toLocaleDateString() : ''}</span>
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {!loading && !error && qItems.length === 0 && (
+                    <div className="text-gray-600">No question results.</div>
+                  )}
+                </div>
+              </section>
             </div>
           </div>
         </main>

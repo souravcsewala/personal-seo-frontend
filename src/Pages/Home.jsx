@@ -232,6 +232,8 @@ export default function Home({ initialFeed = [] }) {
       const image = type === 'blog' ? (doc?.signedUrl || doc?.image) : undefined;
       const userVoted = it?.userVoted;
       const userVote = it?.userVote;
+      const likesCount = typeof it.likes === 'number' ? it.likes : (doc?.likesCount || 0);
+      const shareCount = typeof it.shares === 'number' ? it.shares : (doc?.shareCount || 0);
       return {
         id: doc?._id,
         slug: doc?.slug,
@@ -243,12 +245,12 @@ export default function Home({ initialFeed = [] }) {
         description: description || '',
         image,
         category: doc?.category?.name,
-        likes: doc?.likesCount || 0,
-        shares: doc?.shareCount || 0,
+        likes: likesCount,
+        shares: shareCount,
         comments: Array.isArray(doc?.comments) ? doc.comments.length : 0,
         totalVotes: Array.isArray(doc?.options) ? doc.options.reduce((s,o)=>s+(o.votes||0),0) : 0,
         options: doc?.options,
-        isLiked: false,
+        isLiked: typeof it.isLiked === 'boolean' ? it.isLiked : false,
         userVoted,
         userVote,
       };
@@ -385,29 +387,74 @@ export default function Home({ initialFeed = [] }) {
   };
 
   const handleToggleLike = async (item) => {
-    if (item.contentType !== 'blog') return;
     if (!isLoggedIn) { router.push('/login'); return; }
     try {
-      const { data } = await axios.post(`${prodServerUrl}/blogs/${item.id}/like`, {}, { headers: { 'x-auth-token': auth.accessToken } });
-      const liked = !!data?.data?.liked;
-      const likesCount = Number(data?.data?.likesCount ?? (item.likes || 0));
-      setFeed((prev) => prev.map((it) => (it.doc?._id || it.id) === item.id ? { ...it, doc: it.doc, likes: likesCount, isLiked: liked } : it));
+      if (item.contentType === 'blog') {
+        const { data } = await axios.post(`${prodServerUrl}/blogs/${item.id}/like`, {}, { headers: { 'x-auth-token': auth.accessToken } });
+        const liked = !!data?.data?.liked;
+        const likesCount = Number(data?.data?.likesCount ?? (item.likes || 0));
+        setFeed((prev) => prev.map((it) => {
+          if ((it.doc?._id || it.id) !== item.id) return it;
+          const nextDoc = { ...(it.doc || {}), likesCount };
+          return { ...it, doc: nextDoc, likes: likesCount, isLiked: liked };
+        }));
+      } else if (item.contentType === 'question') {
+        const { data } = await axios.post(`${prodServerUrl}/questions/${item.id}/like`, {}, { headers: { 'x-auth-token': auth.accessToken } });
+        const liked = !!data?.data?.liked;
+        const likesCount = Number(data?.data?.likesCount ?? (item.likes || 0));
+        setFeed((prev) => prev.map((it) => {
+          if ((it.doc?._id || it.id) !== item.id) return it;
+          const nextDoc = { ...(it.doc || {}), likesCount };
+          return { ...it, doc: nextDoc, likes: likesCount, isLiked: liked };
+        }));
+      }
     } catch (err) {
       alert(err?.response?.data?.message || 'Failed to react');
     }
   };
 
   const handleShare = async (item) => {
-    if (item.contentType !== 'blog') return;
-    if (!isLoggedIn) { router.push('/login'); return; }
-    try {
-      const { data } = await axios.post(`${prodServerUrl}/blogs/${item.id}/share`, {}, { headers: { 'x-auth-token': auth.accessToken } });
-      const shareCount = Number((data?.data?.shareCount ?? (item.shares || 0)));
-      setFeed((prev) => prev.map((it) => (it.doc?._id || it.id) === item.id ? { ...it, doc: it.doc, shares: shareCount } : it));
-      try { await navigator.share?.({ title: item.title, url: typeof window !== 'undefined' ? window.location.href : '' }); } catch (_) {}
-    } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to share');
+    const pretty = encodeURIComponent(item.slug || item.id || '');
+    const path = item.contentType === 'blog' ? `/blog/${pretty}`
+      : item.contentType === 'question' ? `/question/${pretty}`
+      : item.contentType === 'poll' ? `/poll/${pretty}`
+      : '/';
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const shareUrl = `${origin}${path}`;
+
+    // Increment share count when authenticated
+    if (isLoggedIn) {
+      try {
+        if (item.contentType === 'blog') {
+          const { data } = await axios.post(`${prodServerUrl}/blogs/${item.id}/share`, {}, { headers: { 'x-auth-token': auth.accessToken } });
+          const shareCount = Number((data?.data?.shareCount ?? (item.shares || 0)));
+          setFeed((prev) => prev.map((it) => {
+            if ((it.doc?._id || it.id) !== item.id) return it;
+            const nextDoc = { ...(it.doc || {}), shareCount };
+            return { ...it, doc: nextDoc, shares: shareCount };
+          }));
+        } else if (item.contentType === 'question') {
+          const { data } = await axios.post(`${prodServerUrl}/questions/${item.id}/share`, {}, { headers: { 'x-auth-token': auth.accessToken } });
+          const shareCount = Number((data?.data?.shareCount ?? (item.shares || 0)));
+          setFeed((prev) => prev.map((it) => {
+            if ((it.doc?._id || it.id) !== item.id) return it;
+            const nextDoc = { ...(it.doc || {}), shareCount };
+            return { ...it, doc: nextDoc, shares: shareCount };
+          }));
+        }
+      } catch (err) {
+        // Ignore counter error; allow sharing to proceed
+      }
     }
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: item.title, url: shareUrl });
+      } else if (navigator.clipboard && typeof window !== 'undefined') {
+        await navigator.clipboard.writeText(shareUrl);
+        alert('Link copied to clipboard');
+      }
+    } catch (_) {}
   };
 
   // Render poll options
@@ -659,14 +706,7 @@ export default function Home({ initialFeed = [] }) {
                     <div className="flex items-center space-x-6 text-gray-500">
                       {item.contentType !== 'poll' && (
                         <button 
-                          onClick={() => {
-                            if (item.contentType === 'blog') {
-                              const slug = item.slug || item.id;
-                              router.push(`/blog/${encodeURIComponent(slug)}`);
-                              return;
-                            }
-                            handleToggleLike(item);
-                          }}
+                          onClick={() => handleToggleLike(item)}
                           className={`flex items-center space-x-2 transition-colors cursor-pointer ${
                             item.isLiked 
                               ? 'text-[#C96442]' 
@@ -953,34 +993,19 @@ export default function Home({ initialFeed = [] }) {
             </svg>
           </button>
 
-          {/* Ask Question and Create Poll buttons hidden by request */}
-          {/**
-           * <button
-           *   onClick={() => {
-           *     router.push('/ask-question');
-           *     setFabExpanded(false);
-           *   }}
-           *   className="bg-[#C96442] text-white p-3 rounded-full shadow-lg hover:bg-[#C96442]/90 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C96442] cursor-pointer"
-           *   aria-label="Ask a question"
-           * >
-           *   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-           *     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-           *   </svg>
-           * </button>
-           *
-           * <button
-           *   onClick={() => {
-           *     router.push('/create-poll');
-           *     setFabExpanded(false);
-           *   }}
-           *   className="bg-[#C96442] text-white p-3 rounded-full shadow-lg hover:bg-[#C96442]/90 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C96442] cursor-pointer"
-           *   aria-label="Create a poll"
-           * >
-           *   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-           *     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-           *   </svg>
-           * </button>
-           */}
+          {/* Ask Question Button */}
+          <button
+            onClick={() => {
+              router.push('/ask-question');
+              setFabExpanded(false);
+            }}
+            className="bg-[#C96442] text-white p-3 rounded-full shadow-lg hover:bg-[#C96442]/90 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C96442] cursor-pointer"
+            aria-label="Ask a question"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
         </div>
 
         {/* Main FAB Button */}

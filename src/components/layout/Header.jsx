@@ -112,8 +112,15 @@ export default function Header({ onLoginClick }) {
               placeholder="Search blogs by title, meta, author..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-[#C96442]/10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
+              className="w-full pl-10 pr-14 py-3 bg-[#C96442]/10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
             />
+            <button
+              type="submit"
+              className="absolute inset-y-0 right-0 px-3 m-1 rounded-md text-gray-700 hover:text-white hover:bg-[#C96442] transition-colors cursor-pointer flex items-center"
+              aria-label="Search"
+            >
+              <span className="text-sm font-medium">Search</span>
+            </button>
           </div>
         </form>
 

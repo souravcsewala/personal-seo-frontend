@@ -187,6 +187,8 @@ export default function Profile() {
     setUserQuestions([]);
     setQuestionsPage(1);
     setQuestionsHasMore(true);
+    // Load first page of questions immediately so the tab shows items without scrolling
+    loadUserQuestions(1, currentUserId);
   }, [isLoggedIn, auth?.accessToken, currentUserId]);
 
   // Infinite scroll via IntersectionObserver
@@ -442,7 +444,7 @@ export default function Profile() {
                                 stroke="currentColor" 
                                 viewBox="0 0 24 24"
                               >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.25 12.75c0-1.243 1.007-2.25 2.25-2.25H8.4c.621 0 1.216-.246 1.654-.684l3.6-3.6a2.25 2.25 0 113.182 3.182L15 10.5h4.5A2.25 2.25 0 0121.75 12.75l-1.125 5.063A2.25 2.25 0 0118.4 20.25H9.75A2.25 2.25 0 017.5 18v-5.25H4.5a2.25 2.25 0 01-2.25-2.25z" />
                               </svg>
                               <span>{post.likes}</span>
                             </button>
@@ -478,7 +480,7 @@ export default function Profile() {
                           <h3 className="text-xl font-semibold text-gray-900 flex-1">{q.title}</h3>
                           <div className="flex items-center gap-2">
                             <button
-                              onClick={(e) => { e.stopPropagation(); router.push(`/question/${encodeURIComponent(q.slug || q.id)}`); }}
+                              onClick={(e) => { e.stopPropagation(); router.push(`/edit-question/${encodeURIComponent(q.id)}`); }}
                               className="p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                               title="Edit question"
                             >

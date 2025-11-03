@@ -425,14 +425,12 @@ export default function QuestionDetail() {
                   if (!isOwner) return null;
                   return (
                     <div className="flex items-center space-x-3 ml-auto">
-                      {!questionEdit.editing && (
-                        <button
-                          onClick={() => setQuestionEdit({ editing: true, saving: false, deleting: false, title: question.title || '', description: question.description || '' })}
-                          className="text-sm font-medium text-gray-600 hover:text-[#C96442]"
-                        >
-                          Edit
-                        </button>
-                      )}
+                      <button
+                        onClick={() => router.push(`/edit-question/${encodeURIComponent(question._id)}`)}
+                        className="text-sm font-medium text-gray-600 hover:text-[#C96442]"
+                      >
+                        Edit
+                      </button>
                       <button
                         onClick={async () => {
                           if (!isLoggedIn) { router.push('/login'); return; }

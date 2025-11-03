@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter, useParams } from 'next/navigation';
 import axios from 'axios';
@@ -30,6 +30,17 @@ export default function BlogDetail({ initialBlog }) {
   const [isSaved, setIsSaved] = useState(false);
   const [blogEdit, setBlogEdit] = useState({ editing: false, saving: false, deleting: false, title: '', content: '' });
   const QuillEditor = dynamic(() => import('../components/common/QuillEditor'), { ssr: false });
+  const titleInputRef = useRef(null);
+
+  // Keep focus on title when entering edit mode so typing doesn't go into the content editor
+  useEffect(() => {
+    if (blogEdit.editing) {
+      const id = setTimeout(() => {
+        try { titleInputRef.current && titleInputRef.current.focus(); } catch (_) {}
+      }, 0);
+      return () => clearTimeout(id);
+    }
+  }, [blogEdit.editing]);
 
   useEffect(() => {
     let mounted = true;
@@ -373,14 +384,13 @@ export default function BlogDetail({ initialBlog }) {
                     if (!isOwner) return null;
                     return (
                       <div className="flex items-center space-x-3">
-                        {!blogEdit.editing && (
-                          <button
-                            onClick={() => setBlogEdit({ editing: true, saving: false, deleting: false, title: blog.title || '', content: blog.contentHtml || '' })}
-                            className="text-sm font-medium text-gray-600 hover:text-[#C96442]"
-                          >
-                            Edit
-                          </button>
-                        )}
+                        <button
+                          onClick={() => router.push(`/edit-blog/${encodeURIComponent(blog.id)}`)}
+                          className="text-sm font-medium text-gray-600 hover:text-[#C96442]"
+                          aria-label="Edit blog"
+                        >
+                          Edit
+                        </button>
                         <button
                           onClick={async () => {
                             if (!auth?.isAuthenticated || !auth?.accessToken) { router.push('/login'); return; }
@@ -411,6 +421,17 @@ export default function BlogDetail({ initialBlog }) {
                     type="text"
                     value={blogEdit.title}
                     onChange={(e) => setBlogEdit((prev) => ({ ...prev, title: e.target.value }))}
+                    onFocus={() => {
+                      try {
+                        const active = typeof document !== 'undefined' ? document.activeElement : null;
+                        const editorEl = typeof document !== 'undefined' ? document.querySelector('.ql-editor') : null;
+                        if (editorEl && (active === editorEl || (active && editorEl.contains(active)))) {
+                          editorEl.blur();
+                        }
+                      } catch (_) {}
+                    }}
+                    ref={titleInputRef}
+                    autoFocus
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442] focus:border-transparent text-lg font-bold"
                   />
                 </div>
@@ -437,6 +458,7 @@ export default function BlogDetail({ initialBlog }) {
                       value={blogEdit.content}
                       onChange={(html) => setBlogEdit((prev) => ({ ...prev, content: html }))}
                       height={350}
+                      autoFocusEditor={false}
                     />
                     <div className="flex items-center space-x-3">
                       <button

@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useApp } from '../../context/AppContext';
 import { useSelector } from 'react-redux';
+import axios from 'axios';
+import { prodServerUrl } from '../../global/server';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -34,27 +36,33 @@ export default function Sidebar() {
     }
   };
 
-  const categories = [
-    { name: "Sports", count: 248 },
-    { name: "Music", count: 189 },
-    { name: "Politics", count: 156 },
-    { name: "Topics", count: 134 }
-  ];
+  const [categories, setCategories] = useState([]);
+  const [allCategories, setAllCategories] = useState([]);
+  const [trendingItems, setTrendingItems] = useState([]);
 
-  const allCategories = [
-    { name: "Sports", count: 248 },
-    { name: "Music", count: 189 },
-    { name: "Politics", count: 156 },
-    { name: "Topics", count: 134 },
-    { name: "Technology", count: 98 },
-    { name: "Business", count: 87 },
-    { name: "Health", count: 76 },
-    { name: "Education", count: 65 },
-    { name: "Entertainment", count: 54 },
-    { name: "Travel", count: 43 },
-    { name: "Food", count: 32 },
-    { name: "Fashion", count: 28 }
-  ];
+  useEffect(() => {
+    let cancelled = false;
+    async function loadData() {
+      try {
+        const [catsRes, trendRes] = await Promise.all([
+          axios.get(`${prodServerUrl}/get-all-category`, { params: { limit: 100 } }),
+          axios.get(`${prodServerUrl}/feed/trending`, { params: { limit: 5 } })
+        ]);
+
+        const cats = Array.isArray(catsRes?.data?.data) ? catsRes.data.data : [];
+        if (!cancelled) {
+          const mappedAll = cats.map((c) => ({ name: c?.name, _id: c?._id }));
+          setAllCategories(mappedAll);
+          setCategories(mappedAll.slice(0, 4));
+        }
+
+        const trend = Array.isArray(trendRes?.data?.data) ? trendRes.data.data : [];
+        if (!cancelled) setTrendingItems(trend);
+      } catch (_) {}
+    }
+    loadData();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <>
@@ -320,9 +328,11 @@ export default function Sidebar() {
                   className="flex items-center justify-between px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   <span className="text-gray-700">{category.name}</span>
-                  <span className="bg-[#C96442]/10 text-[#C96442] px-2 py-1 rounded-full text-sm font-medium">
-                    {category.count}
-                  </span>
+                  {typeof category.count === 'number' && (
+                    <span className="bg-[#C96442]/10 text-[#C96442] px-2 py-1 rounded-full text-sm font-medium">
+                      {category.count}
+                    </span>
+                  )}
                 </Link>
               ))}
             </div>
@@ -340,19 +350,12 @@ export default function Sidebar() {
               TRENDING TOPICS
             </h3>
             <div className="space-y-2">
-              {[
-                { rank: 1, topic: "Core Web Vitals Update", posts: 45 },
-                { rank: 2, topic: "AI Content Guidelines", posts: 38 },
-                { rank: 3, topic: "Mobile-First Indexing", posts: 32 },
-                { rank: 4, topic: "E-A-T Optimization", posts: 28 },
-                { rank: 5, topic: "Voice Search SEO", posts: 24 }
-              ].map((topic, index) => (
+              {trendingItems.slice(0, 5).map((item, index) => (
                 <div key={index} className="flex items-center justify-between px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
                   <div className="flex items-center space-x-2">
-                    <span className="text-[#C96442] font-bold">#{topic.rank}</span>
-                    <span className="text-gray-700 text-sm">{topic.topic}</span>
+                    <span className="text-[#C96442] font-bold">#{index + 1}</span>
+                    <span className="text-gray-700 text-sm">{item?.title || item?.question || item?.metaTitle || item?.slug || 'Trending'}</span>
                   </div>
-                  <span className="text-gray-500 text-xs">{topic.posts} posts</span>
                 </div>
               ))}
             </div>

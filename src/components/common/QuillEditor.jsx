@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-export default function QuillEditor({ value, onChange, placeholder = 'Write your content here...', height = 450 }) {
+export default function QuillEditor({ value, onChange, placeholder = 'Write your content here...', height = 450, autoFocusEditor = false, preserveSelectionOnValueChange = false }) {
   const editorRef = useRef(null);
   const quillRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -168,6 +168,15 @@ export default function QuillEditor({ value, onChange, placeholder = 'Write your
         quill.clipboard.dangerouslyPasteHTML(value);
       }
 
+      // Avoid stealing focus unless explicitly requested
+      try {
+        if (!autoFocusEditor) {
+          quill.blur();
+        } else {
+          quill.focus();
+        }
+      } catch (_) {}
+
       quill.on('text-change', () => {
         const html = quill.root.innerHTML;
         onChange?.(html);
@@ -243,6 +252,21 @@ export default function QuillEditor({ value, onChange, placeholder = 'Write your
           if (btnBorderDown) btnBorderDown.onclick = (e) => { e.preventDefault(); adjustTableBorder(-1); };
         } catch (_) {}
       }
+
+      // Trap Tab key inside editor to prevent page focus jump/scroll
+      try {
+        quill.keyboard.addBinding({ key: 9 }, function(range, context) {
+          quill.insertText(range.index, '\t', 'user');
+          quill.setSelection(range.index + 1, 0, 'silent');
+          return false; // prevent default
+        });
+        quill.keyboard.addBinding({ key: 9, shiftKey: true }, function(range, context) {
+          // simple behavior: also insert a tab on Shift+Tab
+          quill.insertText(range.index, '\t', 'user');
+          quill.setSelection(range.index + 1, 0, 'silent');
+          return false;
+        });
+      } catch (_) {}
       return true;
     };
 
@@ -253,7 +277,7 @@ export default function QuillEditor({ value, onChange, placeholder = 'Write your
       return () => clearInterval(id);
     }
 
-  }, [editorRef, handleFullscreen, handleImage, handleTable, onChange, placeholder, toolbarOptions, value]);
+  }, [editorRef, handleFullscreen, handleImage, handleTable, onChange, placeholder, toolbarOptions, value, autoFocusEditor]);
 
   useEffect(() => {
     const quill = quillRef.current;
@@ -262,9 +286,9 @@ export default function QuillEditor({ value, onChange, placeholder = 'Write your
     if (typeof value === 'string' && value !== current) {
       const sel = quill.getSelection();
       quill.clipboard.dangerouslyPasteHTML(value);
-      if (sel) quill.setSelection(sel);
+      if (preserveSelectionOnValueChange && sel) quill.setSelection(sel);
     }
-  }, [value]);
+  }, [value, preserveSelectionOnValueChange]);
 
   // Drag-to-resize handlers (for non-fullscreen)
   useEffect(() => {
