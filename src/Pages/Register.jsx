@@ -29,6 +29,7 @@ export default function Register({ categories = [] }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [stage, setStage] = useState('form'); // 'form' | 'otp'
+  const [otpToken, setOtpToken] = useState('');
   const [otp, setOtp] = useState('');
   const [secondsLeft, setSecondsLeft] = useState(120);
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -72,6 +73,7 @@ export default function Register({ categories = [] }) {
       };
       const { data } = await axios.post(`${prodServerUrl}/auth/register-otp/request`, payload);
       if (!data?.success) throw new Error(data?.message || 'Could not send code');
+      setOtpToken(data?.token || '');
       emailRef.current = formData.email;
       setStage('otp');
       setSecondsLeft(120);
@@ -103,7 +105,8 @@ export default function Register({ categories = [] }) {
     }
     setIsSubmitting(true);
     try {
-      const { data } = await axios.post(`${prodServerUrl}/auth/register-otp/verify`, { email: emailRef.current, otp });
+      const payload = otpToken ? { email: emailRef.current, otp, token: otpToken } : { email: emailRef.current, otp };
+      const { data } = await axios.post(`${prodServerUrl}/auth/register-otp/verify`, payload);
       if (!data?.success) throw new Error(data?.message || 'Verification failed');
       alert('Verification successful. You can now log in.');
       router.push('/');
@@ -117,9 +120,10 @@ export default function Register({ categories = [] }) {
   const handleResend = async () => {
     if (secondsLeft > 0) return;
     try {
-      await axios.post(`${prodServerUrl}/auth/register-otp/resend`, { email: emailRef.current });
+      const { data } = await axios.post(`${prodServerUrl}/auth/register-otp/resend`, { email: emailRef.current });
       setSecondsLeft(120);
       setResendCooldown(0);
+      setOtpToken(data?.token || ''); // replace token if backend returned a new one
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Could not resend');
     }
