@@ -24,16 +24,15 @@ export function AppProvider({ children }) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Theme preference
+  // Force light theme regardless of system or stored preference
   useEffect(() => {
-    try {
-      const stored = typeof window !== 'undefined' ? localStorage.getItem('theme') : null;
-      if (stored === 'light' || stored === 'dark') setTheme(stored);
-      else if (typeof window !== 'undefined') {
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        setTheme(prefersDark ? 'dark' : 'light');
-      }
-    } catch (_) {}
+    setTheme('light');
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', 'light');
+      document.documentElement.classList.remove('dark');
+      try { document.documentElement.style.colorScheme = 'light'; } catch (_) {}
+    }
+    try { if (typeof window !== 'undefined') localStorage.setItem('theme', 'light'); } catch (_) {}
   }, []);
 
   useEffect(() => {
@@ -45,7 +44,7 @@ export function AppProvider({ children }) {
   const logout = () => setUser(null);
   const toggleSidebar = () => setSidebarOpen((v) => !v);
   const closeSidebar = () => setSidebarOpen(false);
-  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+  const toggleTheme = () => setTheme('light');
 
   const addPost = (post) => setPosts((prev) => [{ id: Date.now(), ...post }, ...prev]);
   const addQuestion = (q) => setQuestions((prev) => [{ id: Date.now(), ...q }, ...prev]);
