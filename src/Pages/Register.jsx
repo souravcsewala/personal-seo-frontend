@@ -6,6 +6,7 @@ import axios from 'axios';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import { prodServerUrl } from '../global/server';
+import LoadingIndicator from '../components/common/LoadingIndicator';
 
 export default function Register({ categories = [] }) {
   const router = useRouter();
@@ -34,6 +35,7 @@ export default function Register({ categories = [] }) {
   const [secondsLeft, setSecondsLeft] = useState(120);
   const [resendCooldown, setResendCooldown] = useState(0);
   const emailRef = useRef('');
+  const categoriesLoading = !Array.isArray(categories) || categories.length === 0;
 
   const toggleCategory = (id) => {
     setSelectedCategoryIds((prev) =>
@@ -245,25 +247,29 @@ export default function Register({ categories = [] }) {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">Select Your Categories</h3>
                 <p className="text-sm text-gray-600 mb-3">Choose at least one category to personalize your feed.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                  {categories.map((cat) => (
-                    <button
-                      key={cat._id}
-                      type="button"
-                      onClick={() => toggleCategory(cat._id)}
-                      className={`flex items-center justify-between px-3 py-2 rounded-lg border text-sm ${selectedCategoryIds.includes(cat._id) ? 'border-[#C96442] bg-[#C96442]/10 text-[#C96442]' : 'border-gray-200 text-gray-800 hover:border-[#C96442]/40'}`}
-                    >
-                      <span>{cat.name}</span>
-                      {selectedCategoryIds.includes(cat._id) && (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                      )}
-                    </button>
-                  ))}
-                </div>
+                {categoriesLoading ? (
+                  <div className="py-6"><LoadingIndicator /></div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {categories.map((cat) => (
+                      <button
+                        key={cat._id}
+                        type="button"
+                        onClick={() => toggleCategory(cat._id)}
+                        className={`flex items-center justify-between px-3 py-2 rounded-lg border text-sm ${selectedCategoryIds.includes(cat._id) ? 'border-[#C96442] bg-[#C96442]/10 text-[#C96442]' : 'border-gray-200 text-gray-800 hover:border-[#C96442]/40'}`}
+                      >
+                        <span>{cat.name}</span>
+                        {selectedCategoryIds.includes(cat._id) && (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end">
-                <button disabled={isSubmitting} type="submit" className="px-6 py-2 bg-[#C96442] text-white rounded-lg hover:bg-[#C96442]/90 transition-colors cursor-pointer disabled:opacity-60">
+                <button disabled={isSubmitting || categoriesLoading} type="submit" className="px-6 py-2 bg-[#C96442] text-white rounded-lg hover:bg-[#C96442]/90 transition-colors cursor-pointer disabled:opacity-60">
                   {isSubmitting ? 'Creating...' : 'Create Account'}
                 </button>
               </div>
