@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import Header from '../components/layout/Header';
@@ -25,8 +25,14 @@ export default function Register({ categories = [] }) {
   });
   const [selectedCategoryIds, setSelectedCategoryIds] = useState([]);
   const [profileImage, setProfileImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [stage, setStage] = useState('form'); // 'form' | 'otp'
+  const [otp, setOtp] = useState('');
+  const [secondsLeft, setSecondsLeft] = useState(120);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const emailRef = useRef('');
 
   const toggleCategory = (id) => {
     setSelectedCategoryIds((prev) =>
@@ -46,35 +52,76 @@ export default function Register({ categories = [] }) {
       setError('Passwords do not match.');
       return;
     }
+    // Website/Social link removed from registration; validate later in profile
     if (selectedCategoryIds.length === 0) {
       setError('Please select at least one category.');
       return;
     }
     setIsSubmitting(true);
     try {
-      const fd = new FormData();
-      fd.append('fullname', formData.fullname);
-      fd.append('email', formData.email);
-      fd.append('password', formData.password);
-      fd.append('phone', formData.phone);
-      if (formData.bio) fd.append('bio', formData.bio);
-      if (formData.socialLink) fd.append('socialLink', formData.socialLink);
-      if (formData.location) fd.append('location', formData.location);
-      if (formData.website) fd.append('website', formData.website);
-      // backend accepts comma-separated string or array
-      fd.append('interested_topic', selectedCategoryIds.join(','));
-      if (profileImage) fd.append('profileimage', profileImage);
+      const payload = {
+        fullname: formData.fullname,
+        email: formData.email,
+        password: formData.password,
+        phone: formData.phone,
+        bio: formData.bio || undefined,
+        socialLink: formData.socialLink || undefined,
+        location: formData.location || undefined,
+        website: formData.website || undefined,
+        interested_topic: selectedCategoryIds.join(','),
+      };
+      const { data } = await axios.post(`${prodServerUrl}/auth/register-otp/request`, payload);
+      if (!data?.success) throw new Error(data?.message || 'Could not send code');
+      emailRef.current = formData.email;
+      setStage('otp');
+      setSecondsLeft(120);
+      setResendCooldown(30);
+    } catch (err) {
+      setError(err?.response?.data?.message || err.message || 'Something went wrong');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-      const { data } = await axios.post(`${prodServerUrl}/auth/user-register`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      if (!data?.success) throw new Error(data?.message || 'Registration failed');
-      alert('Account created successfully. Please login.');
+  // countdown timers
+  useEffect(() => {
+    if (stage !== 'otp') return;
+    setSecondsLeft((s) => s);
+    const t = setInterval(() => {
+      setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+      setResendCooldown((c) => (c > 0 ? c - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [stage]);
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!otp || otp.length !== 6) {
+      setError('Enter the 6-digit code.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const { data } = await axios.post(`${prodServerUrl}/auth/register-otp/verify`, { email: emailRef.current, otp });
+      if (!data?.success) throw new Error(data?.message || 'Verification failed');
+      alert('Verification successful. You can now log in.');
       router.push('/');
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Something went wrong');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    try {
+      await axios.post(`${prodServerUrl}/auth/register-otp/resend`, { email: emailRef.current });
+      setSecondsLeft(120);
+      setResendCooldown(30);
+    } catch (err) {
+      setError(err?.response?.data?.message || err.message || 'Could not resend');
     }
   };
 
@@ -85,13 +132,14 @@ export default function Register({ categories = [] }) {
         <Sidebar />
         <main className="flex-1 p-6">
           <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Account</h1>
-            <p className="text-gray-600 mb-6">Join SEOHub and personalize your feed by selecting categories you care about.</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">{stage === 'form' ? 'Create Account' : 'Verify Email'}</h1>
+            <p className="text-gray-600 mb-6">{stage === 'form' ? 'Join SEOHub and personalize your feed by selecting categories you care about.' : `We sent a 6-digit code to ${emailRef.current}. It expires in 2 minutes.`}</p>
 
             {error && (
               <div className="mb-4 p-3 rounded border border-red-300 bg-red-50 text-red-700 text-sm">{error}</div>
             )}
 
+            {stage === 'form' && (
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
@@ -107,7 +155,7 @@ export default function Register({ categories = [] }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input type="email" name="email" value={formData.email} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent" />
+                  <input type="email" placeholder="Enter valid mail id for OTP" name="email" value={formData.email} onChange={handleChange} required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
@@ -133,30 +181,61 @@ export default function Register({ categories = [] }) {
                 <div className="hidden md:block" />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Bio</label>
-                  <textarea name="bio" value={formData.bio} onChange={handleChange} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent" />
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
-                    <input type="url" name="website" value={formData.website} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Social Link</label>
-                    <input type="url" name="socialLink" value={formData.socialLink} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                    <input name="location" value={formData.location} onChange={handleChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent" />
-                  </div>
-                </div>
-              </div>
+              {/* Bio, Website, Social Link, Location removed from registration. These can be edited in Profile later. */}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Profile Image (optional)</label>
-                <input type="file" accept="image/*" onChange={(e) => setProfileImage(e.target.files?.[0] || null)} />
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  {imagePreview ? (
+                    <div className="space-y-4">
+                      <img
+                        src={imagePreview}
+                        alt="Profile preview"
+                        className="max-h-40 mx-auto rounded-full object-cover"
+                      />
+                      <div className="flex items-center justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => { setProfileImage(null); setImagePreview(''); }}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                        >
+                          Remove Image
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-gray-600 mb-2">Upload a profile image</p>
+                      <input
+                        id="registerProfileImage"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setProfileImage(file);
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => setImagePreview(ev.target?.result || '');
+                            reader.readAsDataURL(file);
+                          } else {
+                            setImagePreview('');
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="registerProfileImage"
+                        className="bg-[#C96442] text-white px-4 py-2 rounded-lg hover:bg-[#C96442]/90 transition-colors cursor-pointer"
+                      >
+                        Choose Image
+                      </label>
+                      <p className="text-xs text-gray-500 mt-2">JPG, PNG up to 5MB.</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -185,6 +264,36 @@ export default function Register({ categories = [] }) {
                 </button>
               </div>
             </form>
+            )}
+
+            {stage === 'otp' && (
+              <form onSubmit={handleVerifyOtp} className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Enter 6-digit code</label>
+                  <input
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0,6))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent tracking-widest text-center text-lg"
+                    placeholder="______"
+                    autoFocus
+                  />
+                  <div className="mt-2 text-sm text-gray-600 flex items-center gap-2">
+                    <span>Expires in {Math.floor(secondsLeft/60)}:{String(secondsLeft%60).padStart(2,'0')}</span>
+                    <span aria-hidden>|</span>
+                    <button type="button" onClick={handleResend} disabled={resendCooldown>0} className="text-[#C96442] disabled:text-gray-400">{resendCooldown>0?`Resend in ${resendCooldown}s`:'Resend code'}</button>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button type="button" onClick={() => { setStage('form'); setOtp(''); }} className="px-6 py-2 border border-gray-300 rounded-lg">Back</button>
+                  <button disabled={isSubmitting} type="submit" className="px-6 py-2 bg-[#C96442] text-white rounded-lg hover:bg-[#C96442]/90 transition-colors cursor-pointer disabled:opacity-60">
+                    {isSubmitting ? 'Verifying...' : 'Verify & Create Account'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </main>
       </div>

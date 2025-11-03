@@ -10,6 +10,7 @@ import Footer from '../components/layout/Footer';
 import LoginModal from '../components/auth/LoginModal';
 import { useApp } from '../context/AppContext';
 import { prodServerUrl } from '../global/server';
+import LoadingIndicator from '../components/common/LoadingIndicator';
 
 export default function Home({ initialFeed = [] }) {
   const router = useRouter();
@@ -34,6 +35,9 @@ export default function Home({ initialFeed = [] }) {
   const [trending, setTrending] = useState([]);
   const [communityStats, setCommunityStats] = useState({ activeMembers: 0, postsToday: 0, topContributors: 0 });
   const [statsLoading, setStatsLoading] = useState(false);
+  const [announcement, setAnnouncement] = useState(null);
+  const [announcementList, setAnnouncementList] = useState([]);
+  const [announcementIndex, setAnnouncementIndex] = useState(0);
 
   console.log("auth",auth.accessToken)
 
@@ -136,6 +140,59 @@ export default function Home({ initialFeed = [] }) {
     return () => { mounted = false; };
   }, []);
 
+  // Helpers for announcements
+  const isActiveWindow = (a) => {
+    const now = new Date();
+    if (a?.startAt && now < new Date(a.startAt)) return false;
+    if (a?.endAt && now > new Date(a.endAt)) return false;
+    return !!a?.isActive;
+  };
+
+  // Load announcements and prepare rotation list
+  useEffect(() => {
+    let mounted = true;
+    async function loadAnnouncements() {
+      try {
+        const res = await axios.get(`${prodServerUrl}/announcements`, { params: { page: 1, limit: 10 } });
+        if (!mounted) return;
+        const items = Array.isArray(res?.data?.data) ? res.data.data : [];
+        // Show all announcements on the top bar, ordered by priority then newest
+        const ordered = items.slice().sort((a, b) => {
+          const p = (b.priority || 0) - (a.priority || 0);
+          if (p !== 0) return p;
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+        setAnnouncementList(ordered);
+        setAnnouncementIndex(0);
+        setAnnouncement(ordered[0] || null);
+      } catch (_) {
+        if (!mounted) return;
+        setAnnouncementList([]);
+        setAnnouncement(null);
+      }
+    }
+    loadAnnouncements();
+    return () => { mounted = false; };
+  }, []);
+
+  // Rotate through active announcements automatically
+  useEffect(() => {
+    if (!announcementList || announcementList.length <= 1) return;
+    let cancelled = false;
+    const interval = setInterval(() => {
+      if (cancelled) return;
+      setAnnouncementIndex((idx) => {
+        const next = (idx + 1) % announcementList.length;
+        setAnnouncement(announcementList[next]);
+        return next;
+      });
+    }, 8000); // 8 seconds
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [announcementList]);
+
   // Load community stats
   useEffect(() => {
     let mounted = true;
@@ -173,6 +230,8 @@ export default function Home({ initialFeed = [] }) {
       const title = type === 'blog' ? doc?.title : (type === 'question' ? doc?.title : doc?.title);
       const description = type === 'blog' ? doc?.metaDescription : (type === 'question' ? doc?.description : doc?.description);
       const image = type === 'blog' ? (doc?.signedUrl || doc?.image) : undefined;
+      const userVoted = it?.userVoted;
+      const userVote = it?.userVote;
       return {
         id: doc?._id,
         slug: doc?.slug,
@@ -190,6 +249,8 @@ export default function Home({ initialFeed = [] }) {
         totalVotes: Array.isArray(doc?.options) ? doc.options.reduce((s,o)=>s+(o.votes||0),0) : 0,
         options: doc?.options,
         isLiked: false,
+        userVoted,
+        userVote,
       };
     });
     // newest first by original order or createdAt
@@ -224,16 +285,7 @@ export default function Home({ initialFeed = [] }) {
     }
   };
 
-  // Loader component
-  const Loader = () => (
-    <div className="flex justify-center items-center py-8">
-      <div className="flex space-x-2">
-        <div className="w-3 h-3 bg-[#C96442] rounded-full animate-bounce"></div>
-        <div className="w-3 h-3 bg-[#C96442] rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-        <div className="w-3 h-3 bg-[#C96442] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-      </div>
-    </div>
-  );
+  
 
   // Infinite scroll handler
   const handleScroll = () => {
@@ -272,12 +324,51 @@ export default function Home({ initialFeed = [] }) {
   }, [fabExpanded]);
 
   // Handle poll voting
-  const handlePollVote = (pollId, optionIndex) => {
-    votePoll(pollId, optionIndex);
+  const handlePollVote = async (pollId, optionIndex) => {
+    if (!isLoggedIn) { router.push('/login'); return; }
+    try {
+      await axios.post(
+        `${prodServerUrl}/polls/${encodeURIComponent(pollId)}/vote`,
+        { optionIndexes: [optionIndex] },
+        { headers: { 'x-auth-token': auth.accessToken } }
+      );
+      // fetch results to update UI
+      const { data } = await axios.get(`${prodServerUrl}/polls/${encodeURIComponent(pollId)}/results`, {
+        headers: isLoggedIn ? { 'x-auth-token': auth.accessToken } : {},
+      });
+      const r = data?.data;
+      if (r) {
+        setFeed((prev) => prev.map((it) => {
+          const id = it?.doc?._id || it?.id;
+          if (String(id) !== String(pollId)) return it;
+          const next = { ...it };
+          next.doc = { ...(it.doc || {}), options: Array.isArray(r.options) ? r.options : (it.doc?.options || []) };
+          // mark user vote locally for UI
+          next.userVoted = true;
+          next.userVote = Array.isArray(r.userVote) ? r.userVote[0] : (typeof optionIndex === 'number' ? optionIndex : 0);
+          return next;
+        }));
+      }
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Failed to vote');
+    }
   };
 
   // Helpers for blog actions
   const keyFor = (item) => item.slug || item.id;
+
+  const toSlug = (s) => {
+    try {
+      const str = String(s || '').toLowerCase().trim();
+      if (!str) return '';
+      return str
+        .normalize('NFKD')
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    } catch (_) { return ''; }
+  };
 
   const handleToggleSave = (item) => {
     try {
@@ -381,6 +472,36 @@ export default function Home({ initialFeed = [] }) {
           sidebarOpen ? 'lg:ml-64 ml-0' : 'ml-0'
         }`}>
           <div className="max-w-4xl mx-auto">
+            {announcement && (
+              <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-900 rounded px-4 py-2">
+                <marquee id="head" direction="left" scrollamount="6">
+                  {announcementList && announcementList.length > 0 ? (
+                    announcementList.map((it, idx) => (
+                      <React.Fragment key={it._id || idx}>
+                        <a
+                          href={it.linkUrl || '/announcements'}
+                          className="text-[#C96442] font-semibold"
+                          target={it.linkUrl && it.linkUrl.startsWith('http') ? '_blank' : undefined}
+                          rel="noopener noreferrer"
+                        >
+                          {it.title}
+                        </a>
+                        {idx < announcementList.length - 1 && (
+                          <span className="mx-6 text-amber-400">•</span>
+                        )}
+                      </React.Fragment>
+                    ))
+                  ) : (
+                    <a href={announcement?.linkUrl || '/announcements'} className="text-[#C96442] font-semibold" target={announcement?.linkUrl && announcement.linkUrl.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer">
+                      {announcement?.title}
+                    </a>
+                  )}
+                </marquee>
+                <div className="text-right mt-1">
+                  <button onClick={() => router.push('/announcements')} className="text-xs text-gray-600 hover:text-[#C96442] cursor-pointer">See all announcements</button>
+                </div>
+              </div>
+            )}
             <div className="mb-8">
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Latest SEO Insights</h1>
               <p className="text-gray-600">Discover the latest trends, tips, and strategies from the SEO community.</p>
@@ -388,7 +509,7 @@ export default function Home({ initialFeed = [] }) {
 
             <div className="space-y-6">
               {feedLoading && (
-                <div className="rounded-lg border border-gray-200 p-4 text-gray-600">Loading feed...</div>
+                <div className="rounded-lg border border-gray-200 p-4"><LoadingIndicator /></div>
               )}
               {feedError && (
                 <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-700">{feedError}</div>
@@ -494,15 +615,24 @@ export default function Home({ initialFeed = [] }) {
                   <h2 
                     className="text-xl font-bold text-gray-900 mb-3 cursor-pointer hover:text-[#C96442] transition-colors"
                     onClick={() => {
+                      const slug = item.slug || item.id;
+                      if (!slug) return;
                       if (item.contentType === 'blog') {
-                        const slug = item.slug || item.id;
                         router.push(`/blog/${encodeURIComponent(slug)}`);
+                      } else if (item.contentType === 'question') {
+                        router.push(`/question/${encodeURIComponent(slug)}`);
+                      } else if (item.contentType === 'poll') {
+                        router.push(`/poll/${encodeURIComponent(slug)}`);
                       }
                     }}
                   >
                     {item.title}
                   </h2>
-                  <p className="text-gray-600 mb-4">{item.description}</p>
+                  {item.contentType === 'blog' ? (
+                    <p className="text-gray-600 mb-4">{item.description}</p>
+                  ) : (
+                    <div className="text-gray-700 leading-relaxed prose max-w-none mb-4" dangerouslySetInnerHTML={{ __html: item.description || '' }} />
+                  )}
 
                   {item.image && (
                     <img
@@ -549,7 +679,7 @@ export default function Home({ initialFeed = [] }) {
                             stroke="currentColor" 
                             viewBox="0 0 24 24"
                           >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.25 12.75c0-1.243 1.007-2.25 2.25-2.25H8.4c.621 0 1.216-.246 1.654-.684l3.6-3.6a2.25 2.25 0 113.182 3.182L15 10.5h4.5A2.25 2.25 0 0121.75 12.75l-1.125 5.063A2.25 2.25 0 0118.4 20.25H9.75A2.25 2.25 0 017.5 18v-5.25H4.5a2.25 2.25 0 01-2.25-2.25z" />
                           </svg>
                           <span>{item.likes || 0}</span>
                         </button>
@@ -589,7 +719,10 @@ export default function Home({ initialFeed = [] }) {
                     {/* Give an Answer button for questions */}
                     {item.contentType === 'question' && (
                       <button 
-                        onClick={() => router.push(`/question/${item.id}`)}
+                        onClick={() => {
+                          const pretty = item.slug || item.id;
+                          router.push(`/question/${encodeURIComponent(pretty)}`);
+                        }}
                         className="bg-[#C96442] hover:bg-[#A54F35] text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium cursor-pointer"
                       >
                         Give an Answer
@@ -600,7 +733,7 @@ export default function Home({ initialFeed = [] }) {
               ))}
               
               {/* Loader for infinite scroll */}
-              {isLoading && <Loader />}
+              {isLoading && <LoadingIndicator />}
             </div>
           </div>
         </main>
@@ -684,13 +817,48 @@ export default function Home({ initialFeed = [] }) {
                 </div>
                 <span className="text-sm text-gray-500">{allContent.filter(item => item.contentType === 'blog').length}</span>
               </button>
-              
-              {/**
-               * Discussions and Polls filters are hidden per requirements.
-               *
-               * <button ...>Discussions</button>
-               * <button ...>Polls</button>
-               */}
+
+              <button 
+                onClick={() => {
+                  setSelectedContentType('question');
+                  setSelectedCategory(null);
+                }}
+                className={`w-full flex items-center justify-between py-3 px-4 text-left rounded-lg transition-colors cursor-pointer ${
+                  selectedContentType === 'question' 
+                    ? 'bg-[#C96442]/10 text-[#C96442] border border-[#C96442]/20' 
+                    : 'hover:bg-gray-50 border border-transparent'
+                }`}
+              >
+                <div className="flex items-center space-x-3">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                  <span className="font-medium">Discussions</span>
+                </div>
+                <span className="text-sm text-gray-500">{allContent.filter(item => item.contentType === 'question').length}</span>
+              </button>
+
+              {/*
+              <button 
+                onClick={() => {
+                  setSelectedContentType('poll');
+                  setSelectedCategory(null);
+                }}
+                className={`w-full flex items-center justify-between py-3 px-4 text-left rounded-lg transition-colors cursor-pointer ${
+                  selectedContentType === 'poll' 
+                    ? 'bg-[#C96442]/10 text-[#C96442] border border-[#C96442]/20' 
+                    : 'hover:bg-gray-50 border border-transparent'
+                }`}
+              >
+                <div className="flex items-center space-x-3">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  <span className="font-medium">Polls</span>
+                </div>
+                <span className="text-sm text-gray-500">{allContent.filter(item => item.contentType === 'poll').length}</span>
+              </button>
+              */}
             </div>
           </div>
 
@@ -759,21 +927,7 @@ export default function Home({ initialFeed = [] }) {
             </div>
           </div>
 
-          {/* Quick Actions 
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-            <div className="space-y-3">
-              <button className="w-full bg-[#C96442] text-white py-2 px-4 rounded-lg hover:bg-[#C96442]/90 transition-colors font-medium">
-                Ask a Question
-              </button>
-              <button className="w-full bg-[#C96442] text-white py-2 px-4 rounded-lg hover:bg-[#C96442]/90 transition-colors font-medium">
-                Start a Discussion
-              </button>
-              <button className="w-full bg-[#C96442] text-white py-2 px-4 rounded-lg hover:bg-[#C96442]/90 transition-colors font-medium">
-                Share Your Knowledge
-              </button>
-            </div>
-          </div>*/}
+          
         </aside>
       </div>
 

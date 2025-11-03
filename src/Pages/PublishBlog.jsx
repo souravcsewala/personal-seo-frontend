@@ -40,7 +40,6 @@ export default function PublishBlog() {
   const [policy, setPolicy] = useState(null);
   const [policyLoading, setPolicyLoading] = useState(false);
   const [contentWordCount, setContentWordCount] = useState(0);
-  const MIN_WORDS = 10;
 
   const countWordsFromHtml = (html) => {
     try {
@@ -125,15 +124,10 @@ export default function PublishBlog() {
     setSubmitting(true);
     try {
       const wc = countWordsFromHtml(formData.content);
-      if (wc < MIN_WORDS) {
-        setSubmitError(`Content is too short. Minimum ${MIN_WORDS} words required. Current: ${wc}.`);
-        setSubmitting(false);
-        return;
-      }
       const fd = new FormData();
       fd.append('title', formData.title);
       fd.append('content', formData.content);
-      fd.append('metaDescription', formData.metaDescription);
+      if (formData.metaDescription) fd.append('metaDescription', formData.metaDescription);
       fd.append('category', formData.category);
       fd.append('tags', formData.tags);
       if (imageFile) {
@@ -231,25 +225,7 @@ export default function PublishBlog() {
                   </p>
                 </div>
 
-                {/* Meta Description */}
-                <div>
-                  <label htmlFor="metaDescription" className="block text-sm font-medium text-gray-700 mb-2">
-                    Meta Description *
-                  </label>
-                  <textarea
-                    id="metaDescription"
-                    name="metaDescription"
-                    value={formData.metaDescription}
-                    onChange={handleInputChange}
-                    placeholder="Write a compelling meta description for search engines (150-160 characters)"
-                    rows={3}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
-                    required
-                  />
-                  <p className="text-sm text-gray-500 mt-2">
-                    This will appear in search engine results. Keep it between 150-160 characters.
-                  </p>
-                </div>
+                {/* Meta Description removed: auto-generated from content on backend if absent */}
 
                 {/* Category */}
                 <div>
@@ -350,16 +326,14 @@ export default function PublishBlog() {
                   <p className="text-sm text-gray-500 mt-2">
                     Use the formatting toolbar to style your content. You can add headings, lists, tables, images, links, and more.
                   </p>
-                  <p className={`text-sm mt-1 ${contentWordCount < MIN_WORDS ? 'text-red-600' : 'text-gray-600'}`}>
-                    Words: {contentWordCount} {contentWordCount < MIN_WORDS ? `(minimum ${MIN_WORDS})` : ''}
-                  </p>
+                  <p className="text-sm mt-1 text-gray-600">Words: {contentWordCount}</p>
                 </div>
 
                 {/* Blog Guidelines */}
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                   <h4 className="font-medium text-orange-900 mb-2">Publishing Guidelines</h4>
                   <ul className="text-sm text-orange-800 space-y-1">
-                    <li>• Minimum 600 words for better SEO and readability</li>
+                    <li>• Aim for thorough, high-quality content for better SEO and readability</li>
                     <li>• Add a relevant featured image (optimized size)</li>
                     <li>• Use headings (H2/H3), bullet points, and short paragraphs</li>
                     <li>• Include internal and external links where appropriate</li>

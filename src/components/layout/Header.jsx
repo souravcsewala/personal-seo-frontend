@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApp } from '../../context/AppContext';
 import { useSelector, useDispatch } from 'react-redux';
 import { logout as logoutAction } from '../../redux/slices/authslice';
 import { useRouter } from 'next/navigation';
+import { ensureFirebaseMessaging, requestFcmToken } from '../../lib/firebaseClient';
+import axios from 'axios';
+import { prodServerUrl } from '../../global/server';
 
 export default function Header({ onLoginClick }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -15,6 +18,17 @@ export default function Header({ onLoginClick }) {
   const dispatch = useDispatch();
   const router = useRouter();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef(null);
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (!addMenuRef.current) return;
+      if (!addMenuRef.current.contains(e.target)) setAddMenuOpen(false);
+    }
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, []);
 
   const handleLogout = () => {
     dispatch(logoutAction());
@@ -29,6 +43,40 @@ export default function Header({ onLoginClick }) {
     if (!q) return;
     router.push(`/search?q=${encodeURIComponent(q)}`);
   };
+
+  // Register FCM token when user is logged in
+  useEffect(() => {
+    let cancelled = false;
+    async function register() {
+      if (!isLoggedIn || !auth?.accessToken) return;
+      try {
+        await ensureFirebaseMessaging();
+        const token = await requestFcmToken(undefined, { forceRefresh: true });
+        if (!token || cancelled) return;
+        await axios.post(`${prodServerUrl}/push/register-token`, { token, platform: 'web' }, { headers: { 'x-auth-token': auth.accessToken } });
+      } catch (_) {}
+    }
+    register();
+    return () => { cancelled = true; };
+  }, [isLoggedIn, auth?.accessToken]);
+
+  // Ask notification permission for visitors who are not logged in
+  useEffect(() => {
+    let cancelled = false;
+    async function askPermissionForGuests() {
+      if (isLoggedIn) return; // logged-in flow handles it above
+      try {
+        await ensureFirebaseMessaging();
+        const token = await requestFcmToken(undefined, { forceRefresh: true });
+        if (!token || cancelled) return;
+        try {
+          await axios.post(`${prodServerUrl}/push/register-token-guest`, { token, platform: 'web' });
+        } catch (_) {}
+      } catch (_) {}
+    }
+    askPermissionForGuests();
+    return () => { cancelled = true; };
+  }, [isLoggedIn]);
 
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-gray-200 px-6 py-4">
@@ -71,7 +119,7 @@ export default function Header({ onLoginClick }) {
 
         {/* Right Side Actions */}
         <div className="flex items-center space-x-4">
-          {/* Theme Toggle */}
+          {/* Theme Toggle (disabled)
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -82,13 +130,46 @@ export default function Header({ onLoginClick }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
             </svg>
           </button>
-          {/* Desktop Add Post Button */}
-          <Link href="/publish-blog" className="hidden lg:flex bg-[#C96442] text-white px-4 py-2 rounded-lg items-center space-x-2 hover:bg-[#C96442]/90 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            <span>Add Post</span>
-          </Link>
+          */}
+          {/* Desktop Add Post Button with menu */}
+          <div className="relative hidden lg:block" ref={addMenuRef}>
+            <button
+              onClick={() => setAddMenuOpen((v) => !v)}
+              className="bg-[#C96442] text-white px-4 py-2 rounded-lg items-center space-x-2 hover:bg-[#C96442]/90 transition-colors flex"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span>Add Post</span>
+              <svg className={`w-4 h-4 ml-2 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {addMenuOpen && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50">
+                <Link
+                  href="/publish-blog"
+                  onClick={() => setAddMenuOpen(false)}
+                  className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-semibold"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>Create Blog</span>
+                </Link>
+                <Link
+                  href="/ask-question"
+                  onClick={() => setAddMenuOpen(false)}
+                  className="mt-1 flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-semibold"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Create Question</span>
+                </Link>
+              </div>
+            )}
+          </div>
           
           {isLoggedIn ? (
             <div className="relative">

@@ -1,17 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSelector } from 'react-redux';
+import axios from 'axios';
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
 import Footer from '../components/layout/Footer';
 import LoginModal from '../components/auth/LoginModal';
 import { useApp } from '../context/AppContext';
+import { prodServerUrl } from '../global/server';
+import dynamic from 'next/dynamic';
+const QuillEditor = dynamic(() => import('../components/common/QuillEditor'), { ssr: false });
 
 export default function CreatePoll() {
   const router = useRouter();
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const { addPoll, sidebarOpen } = useApp();
+  const { sidebarOpen } = useApp();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -21,17 +26,31 @@ export default function CreatePoll() {
     allowMultipleVotes: false,
     tags: ''
   });
+  const [categories, setCategories] = useState([]);
+  const [loadingCats, setLoadingCats] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const auth = useSelector((s) => s.auth);
+  const isLoggedIn = !!auth?.isAuthenticated && !!auth?.accessToken;
 
-  const categories = [
-    'SEO Tools',
-    'Content Strategy',
-    'Technical SEO',
-    'Link Building',
-    'Local SEO',
-    'Analytics',
-    'Industry Trends',
-    'General Discussion'
-  ];
+  useEffect(() => {
+    let mounted = true;
+    async function loadCats() {
+      try {
+        setLoadingCats(true);
+        const { data } = await axios.get(`${prodServerUrl}/get-all-category`);
+        const items = Array.isArray(data?.data) ? data.data : [];
+        if (!mounted) return;
+        setCategories(items);
+      } catch (_) {
+        if (!mounted) return;
+        setCategories([]);
+      } finally {
+        if (mounted) setLoadingCats(false);
+      }
+    }
+    loadCats();
+    return () => { mounted = false; };
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -69,34 +88,36 @@ export default function CreatePoll() {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    // Validate that at least 2 options are filled
+    if (!isLoggedIn) { router.push('/login'); return; }
+
     const filledOptions = formData.options.filter(option => option.trim() !== '');
     if (filledOptions.length < 2) {
       alert('Please provide at least 2 poll options.');
       return;
     }
 
-    const pollData = {
+    const payload = {
       title: formData.title,
       description: formData.description,
       options: filledOptions,
       category: formData.category,
       duration: formData.duration,
       allowMultipleVotes: formData.allowMultipleVotes,
-      tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-      author: {
-        name: "Current User",
-        handle: "@currentuser",
-        avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=40&h=40&fit=crop&crop=face"
-      }
+      tags: formData.tags.split(',').map(tag => tag.trim()).filter(Boolean),
     };
-    
-    addPoll(pollData);
-    alert('Poll created successfully!');
-    router.push('/');
+
+    try {
+      setSubmitting(true);
+      await axios.post(`${prodServerUrl}/polls`, payload, { headers: { 'x-auth-token': auth.accessToken } });
+      alert('Poll created successfully!');
+      router.push('/');
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Failed to create poll');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -139,14 +160,10 @@ export default function CreatePoll() {
                   <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
                     Description
                   </label>
-                  <textarea
-                    id="description"
-                    name="description"
+                  <QuillEditor
                     value={formData.description}
-                    onChange={handleInputChange}
-                    placeholder="Provide context for your poll (optional)"
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
+                    onChange={(html) => setFormData((prev) => ({ ...prev, description: html }))}
+                    height={250}
                   />
                 </div>
 
@@ -163,10 +180,10 @@ export default function CreatePoll() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
                     required
                   >
-                    <option value="">Select a category</option>
-                    {categories.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
+                    <option value="">{loadingCats ? 'Loading categories...' : 'Select a category'}</option>
+                    {categories.map((cat) => (
+                      <option key={cat._id} value={cat._id}>
+                        {cat.name}
                       </option>
                     ))}
                   </select>
@@ -301,9 +318,10 @@ export default function CreatePoll() {
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2 bg-[#C96442] text-white rounded-lg hover:bg-[#C96442]/90 transition-colors cursor-pointer"
+                    disabled={submitting}
+                    className="px-6 py-2 bg-[#C96442] text-white rounded-lg hover:bg-[#C96442]/90 transition-colors cursor-pointer disabled:opacity-60"
                   >
-                    Create Poll
+                    {submitting ? 'Creating...' : 'Create Poll'}
                   </button>
                 </div>
               </div>

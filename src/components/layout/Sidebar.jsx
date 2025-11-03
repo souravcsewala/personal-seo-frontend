@@ -165,7 +165,6 @@ export default function Sidebar() {
               </svg>
               <span className="font-medium">Publish Blog</span>
             </Link>
-            {/*
             <Link 
               href="/ask-question" 
               onClick={handleLinkClick}
@@ -176,7 +175,7 @@ export default function Sidebar() {
               </svg>
               <span className="font-medium">Ask Question</span>
             </Link>
-            
+            {/*
             <Link 
               href="/create-poll" 
               onClick={handleLinkClick}
@@ -188,6 +187,7 @@ export default function Sidebar() {
               <span className="font-medium">Create Poll</span>
             </Link>
             */}
+            
           </div>
         </div>
 
@@ -269,6 +269,21 @@ export default function Sidebar() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h10M4 14h8" />
               </svg>
               <span className="font-medium">Categories</span>
+            </Link>
+
+            <Link 
+              href="/admin/announcements" 
+              onClick={handleLinkClick}
+              className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                isActive('/admin/announcements') 
+                  ? 'bg-[#C96442]/10 text-[#C96442]'
+                  : 'text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2V9m-6-4l6 6" />
+              </svg>
+              <span className="font-medium">Announcements</span>
             </Link>
 
             <Link 

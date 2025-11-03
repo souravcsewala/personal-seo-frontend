@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 export default function Profile() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ fullname: '', bio: '', location: '', website: '', socialLink: '', phone: '', profileimage: null });
   const [showContentEditModal, setShowContentEditModal] = useState(false);
   const [editingContent, setEditingContent] = useState(null);
   const { sidebarOpen, likePost } = useApp();
@@ -31,33 +32,29 @@ export default function Profile() {
     } catch (_) { return false; }
   })();
   const router = useRouter();
+  const isValidHttpUrl = (val) => {
+    try { const u = new URL(String(val)); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; }
+  };
 
   const [userData, setUserData] = useState(null);
   const [stats, setStats] = useState({ posts: 0, followers: 0, following: 0, likes: 0 });
 
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [userPosts, setUserPosts] = useState([]);
+  const [interests, setInterests] = useState([]); // [{_id,name}]
+  const [allCats, setAllCats] = useState([]);
+  const [modalInterests, setModalInterests] = useState([]);
   const [postsPage, setPostsPage] = useState(1);
   const [postsLimit] = useState(30);
   const [postsHasMore, setPostsHasMore] = useState(true);
   const [postsLoading, setPostsLoading] = useState(false);
   const loadMoreRef = useRef(null);
 
-  const [userQuestions, setUserQuestions] = useState([
-    {
-      id: 1,
-      title: "How to handle duplicate content issues with multiple product variants?",
-      date: "1 week ago",
-      answers: 8,
-      tags: ["Technical SEO", "E-commerce"]
-    },
-    {
-      id: 2,
-      title: "Best practices for optimizing images for Core Web Vitals?",
-      date: "2 weeks ago",
-      answers: 12,
-      tags: ["Performance", "Images"]
-    }
-  ]);
+  const [userQuestions, setUserQuestions] = useState([]);
+  const [questionsPage, setQuestionsPage] = useState(1);
+  const [questionsLimit] = useState(30);
+  const [questionsHasMore, setQuestionsHasMore] = useState(true);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
 
   const [userPolls, setUserPolls] = useState([
     {
@@ -80,14 +77,25 @@ export default function Profile() {
       router.push('/login');
       return;
     }
-    const headers = { 'x-auth-token': auth.accessToken };
+    let token = auth?.accessToken;
+    if (!token) {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
+        const stored = raw ? JSON.parse(raw) : null;
+        token = stored?.accessToken || null;
+      } catch (_) {}
+    }
+    if (!token) return;
+    const headers = { 'x-auth-token': token };
     (async () => {
       try {
-        const [profileRes, statsRes] = await Promise.all([
+        const [profileRes, statsRes, catsRes] = await Promise.all([
           axios.get(`${prodServerUrl}/auth/user-profile`, { headers }),
           axios.get(`${prodServerUrl}/auth/user-stats`, { headers }),
+          axios.get(`${prodServerUrl}/get-all-category`),
         ]);
         const profile = profileRes?.data?.data || {};
+        if (profile && profile._id) setCurrentUserId(profile._id);
         setUserData({
           name: profile.fullname || '',
           handle: profile.email ? `@${profile.email.split('@')[0]}` : '',
@@ -95,6 +103,19 @@ export default function Profile() {
           location: profile?.location || '',
           website: profile?.website || '',
           badges: [],
+        });
+        const its = Array.isArray(profile?.interested_topic) ? profile.interested_topic : [];
+        setInterests(its.map(c => ({ _id: c?._id || c, name: c?.name || '' })).filter(x => x._id));
+        const cats = Array.isArray(catsRes?.data?.data) ? catsRes.data.data : [];
+        setAllCats(cats.map(c => ({ _id: c._id, name: c.name })));
+        setEditForm({
+          fullname: profile.fullname || '',
+          bio: profile.bio || '',
+          location: profile.location || '',
+          website: profile.website || '',
+          socialLink: profile.socialLink || '',
+          phone: profile.phone || '',
+          profileimage: null,
         });
         const s = statsRes?.data?.data || {};
         setStats({
@@ -108,12 +129,22 @@ export default function Profile() {
   }, [isLoggedIn, auth?.accessToken]);
 
   // Load posts with pagination
-  const loadUserPosts = async (page) => {
+  const loadUserPosts = async (page, userIdParam) => {
     if (!isLoggedIn || postsLoading || !postsHasMore) return;
+    const targetUserId = userIdParam || currentUserId || auth?.user?._id || auth?.userId || null;
+    if (!targetUserId) return;
     setPostsLoading(true);
-    const headers = { 'x-auth-token': auth.accessToken };
+    let token = auth?.accessToken;
+    if (!token) {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
+        const stored = raw ? JSON.parse(raw) : null;
+        token = stored?.accessToken || null;
+      } catch (_) {}
+    }
+    const headers = token ? { 'x-auth-token': token } : {};
     try {
-      const { data } = await axios.get(`${prodServerUrl}/blogs/get-blog-by-author/${auth?.user?._id || auth?.userId || ''}`, {
+      const { data } = await axios.get(`${prodServerUrl}/blogs/get-blog-by-author/${encodeURIComponent(targetUserId)}`, {
         headers,
         params: { page, limit: postsLimit },
       });
@@ -147,26 +178,77 @@ export default function Profile() {
   // Reset and load first page when auth ready
   useEffect(() => {
     if (!isLoggedIn) return;
+    if (!currentUserId) return;
     setUserPosts([]);
     setPostsPage(1);
     setPostsHasMore(true);
-    loadUserPosts(1);
-  }, [isLoggedIn, auth?.accessToken]);
+    loadUserPosts(1, currentUserId);
+    // Reset questions
+    setUserQuestions([]);
+    setQuestionsPage(1);
+    setQuestionsHasMore(true);
+  }, [isLoggedIn, auth?.accessToken, currentUserId]);
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
     if (!isLoggedIn) return;
+    if (!currentUserId) return;
     const el = loadMoreRef.current;
     if (!el) return;
     const observer = new IntersectionObserver((entries) => {
       const first = entries[0];
-      if (first.isIntersecting && postsHasMore && !postsLoading && activeTab === 'posts') {
-        loadUserPosts(postsPage + 1);
+      if (first.isIntersecting) {
+        if (activeTab === 'posts' && postsHasMore && !postsLoading) {
+          loadUserPosts(postsPage + 1, currentUserId);
+        }
+        if (activeTab === 'questions' && questionsHasMore && !questionsLoading) {
+          loadUserQuestions(questionsPage + 1, currentUserId);
+        }
       }
     }, { root: null, rootMargin: '0px', threshold: 1.0 });
     observer.observe(el);
     return () => { observer.disconnect(); };
-  }, [isLoggedIn, postsHasMore, postsLoading, postsPage, activeTab]);
+  }, [isLoggedIn, postsHasMore, postsLoading, postsPage, questionsHasMore, questionsLoading, questionsPage, activeTab, currentUserId]);
+
+  // Load questions
+  const loadUserQuestions = async (page, userIdParam) => {
+    if (!isLoggedIn || questionsLoading || !questionsHasMore) return;
+    const targetUserId = userIdParam || currentUserId || auth?.user?._id || auth?.userId || null;
+    if (!targetUserId) return;
+    setQuestionsLoading(true);
+    let token = auth?.accessToken;
+    if (!token) {
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
+        const stored = raw ? JSON.parse(raw) : null;
+        token = stored?.accessToken || null;
+      } catch (_) {}
+    }
+    const headers = token ? { 'x-auth-token': token } : {};
+    try {
+      const { data } = await axios.get(`${prodServerUrl}/questions/by-author/${encodeURIComponent(targetUserId)}`, {
+        headers,
+        params: { page, limit: questionsLimit },
+      });
+      const items = data?.data || [];
+      const total = Number(data?.pagination?.total || 0);
+      const mapped = items.map((d) => ({
+        id: d._id,
+        slug: d.slug,
+        title: d.title,
+        tags: Array.isArray(d.tags) ? d.tags : [],
+        date: d?.createdAt ? new Date(d.createdAt).toLocaleDateString() : '',
+      }));
+      setUserQuestions((prev) => (page === 1 ? mapped : [...prev, ...mapped]));
+      const nextHasMore = page * questionsLimit < total;
+      setQuestionsHasMore(nextHasMore);
+      setQuestionsPage(page);
+    } catch (_) {
+      setQuestionsHasMore(false);
+    } finally {
+      setQuestionsLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -226,13 +308,24 @@ export default function Profile() {
                     </div>
                   </div>
                 </div>
+                {/* Interests */}
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-lg font-semibold text-gray-900">Your Interests</h3>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {interests.length ? interests.map((c) => (
+                      <span key={c._id} className="px-3 py-1 rounded-full bg-[#C96442]/10 text-[#C96442] text-sm">{c.name || 'Category'}</span>
+                    )) : <span className="text-gray-500">No interests selected.</span>}
+                  </div>
+                </div>
                 
                 <div className="flex space-x-3">
-                  <button 
-                    onClick={() => router.push('/publish-blog')}
-                    className="bg-[#C96442] text-white px-6 py-2 rounded-lg hover:bg-[#C96442]/90 transition-colors cursor-pointer"
+                  <button
+                    onClick={() => { setModalInterests(interests.map(i => i._id)); setShowProfileEditModal(true); }}
+                    className="border border-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                   >
-                    Write a Post
+                    Edit Profile
                   </button>
                 </div>
               </div>
@@ -252,6 +345,16 @@ export default function Profile() {
                   >
                     Posts ({userPosts.length})
                   </button>
+                  <button
+                    onClick={() => setActiveTab('questions')}
+                    className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer ${
+                      activeTab === 'questions'
+                        ? 'border-[#C96442] text-[#C96442]'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    Questions ({userQuestions.length})
+                  </button>
                   
                   <button
                     onClick={() => router.push('/saved')}
@@ -270,18 +373,43 @@ export default function Profile() {
                 {activeTab === 'posts' && (
                   <div className="space-y-6">
                     {userPosts.map((post) => (
-                      <div key={post.id} className="border-b border-gray-200 pb-6 last:border-b-0">
+                      <div
+                        key={post.id}
+                        className="border-b border-gray-200 pb-6 last:border-b-0 cursor-pointer"
+                        onClick={() => router.push(`/blog/${encodeURIComponent(post.slug || post.id)}`)}
+                      >
                         <div className="flex items-start justify-between mb-2">
                           <h3 className="text-xl font-semibold text-gray-900 flex-1">{post.title}</h3>
-                          <button
-                            onClick={() => router.push(`/edit-blog/${encodeURIComponent(post.id)}`)}
-                            className="ml-4 p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                            title="Edit post"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); router.push(`/edit-blog/${encodeURIComponent(post.id)}`); }}
+                              className="p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                              title="Edit post"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm('Delete this post? This action cannot be undone.')) return;
+                                try {
+                                  const headers = { 'x-auth-token': auth.accessToken };
+                                  await axios.delete(`${prodServerUrl}/blogs/delete-blog/${encodeURIComponent(post.id)}`, { headers });
+                                  setUserPosts(prev => prev.filter(p => p.id !== post.id));
+                                } catch (e) {
+                                  alert(e?.response?.data?.message || e.message || 'Failed to delete');
+                                }
+                              }}
+                              className="p-2 text-red-500 hover:text-red-600 transition-colors cursor-pointer"
+                              title="Delete post"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0h8a1 1 0 001-1V5a1 1 0 00-1-1h-3.5a1 1 0 01-.894-.553L12 3l-.606.447A1 1 0 0110.5 4H7a1 1 0 00-1 1v1z" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                         {post.image && (
                           <img src={post.image} alt={post.imageAlt} className="w-full h-48 object-cover rounded-lg mb-3" />
@@ -301,7 +429,7 @@ export default function Profile() {
                           <div className="flex items-center space-x-4 text-sm text-gray-500">
                             <span>{post.date}</span>
                             <button 
-                              onClick={() => likePost(post.id)}
+                              onClick={(e) => { e.stopPropagation(); likePost(post.id); }}
                               className={`flex items-center space-x-1 transition-colors cursor-pointer ${
                                 post.isLiked 
                                   ? 'text-[#C96442]' 
@@ -340,23 +468,48 @@ export default function Profile() {
 
                 {activeTab === 'questions' && (
                   <div className="space-y-6">
-                    {userQuestions.map((question) => (
-                      <div key={question.id} className="border-b border-gray-200 pb-6 last:border-b-0">
+                    {userQuestions.map((q) => (
+                      <div
+                        key={q.id}
+                        className="border-b border-gray-200 pb-6 last:border-b-0 cursor-pointer"
+                        onClick={() => router.push(`/question/${encodeURIComponent(q.slug || q.id)}`)}
+                      >
                         <div className="flex items-start justify-between mb-2">
-                          <h3 className="text-xl font-semibold text-gray-900 flex-1">{question.title}</h3>
-                          <button
-                            onClick={() => openContentEdit('question', question)}
-                            className="ml-4 p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-                            title="Edit question"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
+                          <h3 className="text-xl font-semibold text-gray-900 flex-1">{q.title}</h3>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); router.push(`/question/${encodeURIComponent(q.slug || q.id)}`); }}
+                              className="p-2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+                              title="Edit question"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm('Delete this question? This action cannot be undone.')) return;
+                                try {
+                                  const headers = { 'x-auth-token': auth.accessToken };
+                                  await axios.delete(`${prodServerUrl}/questions/${encodeURIComponent(q.id)}`, { headers });
+                                  setUserQuestions(prev => prev.filter(x => x.id !== q.id));
+                                } catch (e) {
+                                  alert(e?.response?.data?.message || e.message || 'Failed to delete');
+                                }
+                              }}
+                              className="p-2 text-red-500 hover:text-red-600 transition-colors cursor-pointer"
+                              title="Delete question"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0h8a1 1 0 001-1V5a1 1 0 00-1-1h-3.5a1 1 0 01-.894-.553L12 3l-.606.447A1 1 0 0110.5 4H7a1 1 0 00-1 1v1z" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between">
                           <div className="flex flex-wrap gap-2">
-                            {question.tags.map((tag, index) => (
+                            {(q.tags || []).map((tag, index) => (
                               <span
                                 key={index}
                                 className="bg-[#C96442]/10 text-[#C96442] px-2 py-1 rounded-full text-sm font-medium"
@@ -366,17 +519,17 @@ export default function Profile() {
                             ))}
                           </div>
                           <div className="flex items-center space-x-4 text-sm text-gray-500">
-                            <span>{question.date}</span>
-                            <div className="flex items-center space-x-1">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                              </svg>
-                              <span>{question.answers} answers</span>
-                            </div>
+                            <span>{q.date}</span>
                           </div>
                         </div>
                       </div>
                     ))}
+                    {questionsLoading && (
+                      <div className="text-center text-gray-500 py-4">Loading…</div>
+                    )}
+                    {!questionsHasMore && userQuestions.length > 0 && (
+                      <div className="text-center text-gray-400 py-4 text-sm">No more questions</div>
+                    )}
                   </div>
                 )}
 
@@ -454,11 +607,148 @@ export default function Profile() {
 
       {/* Profile Edit Modal */}
       {showProfileEditModal && (
-        <ProfileEditModal
-          userData={userData}
-          onSave={handleProfileEdit}
-          onClose={() => setShowProfileEditModal(false)}
-        />
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white w-full max-w-lg rounded-lg shadow-lg p-6">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Edit Profile</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Full name</label>
+                <input
+                  type="text"
+                  value={editForm.fullname}
+                  onChange={(e) => setEditForm(f => ({ ...f, fullname: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Bio</label>
+                <textarea
+                  rows={3}
+                  value={editForm.bio}
+                  onChange={(e) => setEditForm(f => ({ ...f, bio: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442]"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1">Location</label>
+                  <input
+                    type="text"
+                    value={editForm.location}
+                    onChange={(e) => setEditForm(f => ({ ...f, location: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1">Website</label>
+                  <input
+                    type="url"
+                    value={editForm.website}
+                    onChange={(e) => setEditForm(f => ({ ...f, website: e.target.value }))}
+                    placeholder="https://example.com"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Social Link</label>
+                <input
+                  type="url"
+                  value={editForm.socialLink}
+                  onChange={(e) => setEditForm(f => ({ ...f, socialLink: e.target.value }))}
+                  placeholder="https://twitter.com/yourhandle"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Phone</label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C96442]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Profile Image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setEditForm(f => ({ ...f, profileimage: e.target.files && e.target.files[0] ? e.target.files[0] : null }))}
+                />
+              </div>
+              {/* Interests in modal */}
+              <div>
+                <label className="block text-sm text-gray-700 mb-2">Your Interests</label>
+                <div className="flex flex-wrap gap-2">
+                  {allCats.map((c) => {
+                    const selected = modalInterests.some(id => String(id) === String(c._id));
+                    return (
+                      <button
+                        key={c._id}
+                        onClick={() => {
+                          setModalInterests(prev => selected ? prev.filter(id => String(id) !== String(c._id)) : [...prev, c._id]);
+                        }}
+                        className={`px-3 py-1 rounded-full text-sm border ${selected ? 'bg-[#C96442] text-white border-[#C96442]' : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'}`}
+                      >
+                        {c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowProfileEditModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    if (editForm.website && !isValidHttpUrl(editForm.website)) { alert('Please enter a valid website URL (include http/https).'); return; }
+                    if (editForm.socialLink && !isValidHttpUrl(editForm.socialLink)) { alert('Please enter a valid social link URL (include http/https).'); return; }
+                    const headers = { 'x-auth-token': auth.accessToken };
+                    const fd = new FormData();
+                    if (editForm.fullname) fd.append('fullname', editForm.fullname);
+                    fd.append('bio', editForm.bio || '');
+                    fd.append('location', editForm.location || '');
+                    fd.append('website', editForm.website || '');
+                    fd.append('socialLink', editForm.socialLink || '');
+                    fd.append('phone', editForm.phone || '');
+                    if (editForm.profileimage) fd.append('profileimage', editForm.profileimage);
+                    const { data } = await axios.put(`${prodServerUrl}/auth/edit-profile`, fd, { headers });
+                    const updated = data?.data || {};
+                    setUserData(u => ({
+                      ...u,
+                      name: updated.fullname || u.name,
+                      avatar: updated?.profileimage?.signedUrl || updated?.profileimage?.url || u.avatar,
+                      location: updated.location || u.location,
+                      website: updated.website || u.website,
+                    }));
+                    // update interests
+                    await axios.put(`${prodServerUrl}/auth/interested-topic-update`, { interested_topic: modalInterests }, { headers });
+                    // refresh profile interests
+                    try {
+                      const { data: prof } = await axios.get(`${prodServerUrl}/auth/user-profile`, { headers });
+                      const profile = prof?.data || {};
+                      const its = Array.isArray(profile?.interested_topic) ? profile.interested_topic : [];
+                      setInterests(its.map(c => ({ _id: c?._id || c, name: c?.name || '' })).filter(x => x._id));
+                    } catch (_) {}
+                    setShowProfileEditModal(false);
+                  } catch (e) {
+                    alert(e?.response?.data?.message || e.message || 'Failed to update profile');
+                  }
+                }}
+                className="px-4 py-2 bg-[#C96442] text-white rounded-lg hover:bg-[#C96442]/90"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Content Edit Modal */}

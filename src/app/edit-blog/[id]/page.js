@@ -28,7 +28,6 @@ export default function EditBlogPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [contentWordCount, setContentWordCount] = useState(0);
-  const MIN_WORDS = 10;
 
   const countWordsFromHtml = (html) => {
     try {
@@ -113,11 +112,6 @@ export default function EditBlogPage() {
       setSubmitError("");
       setSubmitting(true);
       const wc = countWordsFromHtml(form.content);
-      if (wc < MIN_WORDS) {
-        setSubmitError(`Content is too short. Minimum ${MIN_WORDS} words required. Current: ${wc}.`);
-        setSubmitting(false);
-        return;
-      }
       const headers = { "x-auth-token": auth.accessToken };
       // Use JSON update when not replacing image
       const payload = {
@@ -166,8 +160,7 @@ export default function EditBlogPage() {
               <label htmlFor="title" className="block text-sm font-medium text-gray-700">Blog Title *</label>
               <input id="title" value={form.title} onChange={(e)=>setForm(v=>({...v,title:e.target.value}))} placeholder="Enter an engaging title" className="w-full border border-gray-300 rounded p-2" />
 
-              <label htmlFor="metaDescription" className="block text-sm font-medium text-gray-700">Meta Description *</label>
-              <input id="metaDescription" value={form.metaDescription} onChange={(e)=>setForm(v=>({...v,metaDescription:e.target.value}))} placeholder="Short description for SEO" className="w-full border border-gray-300 rounded p-2" />
+              {/* Meta Description removed: backend can auto-generate if absent */}
 
               <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category *</label>
               <select id="category" value={form.category} onChange={(e)=>setForm(v=>({...v,category:e.target.value}))} className="w-full border border-gray-300 rounded p-2">
@@ -205,7 +198,7 @@ export default function EditBlogPage() {
 
               <label className="block text-sm font-medium text-gray-700">Content *</label>
               <QuillEditor value={form.content} onChange={(content)=>{ setForm(v=>({...v, content})); setContentWordCount(countWordsFromHtml(content)); }} height={450} />
-              <p className={`text-sm mt-1 ${contentWordCount < MIN_WORDS ? 'text-red-600' : 'text-gray-600'}`}>Words: {contentWordCount} {contentWordCount < MIN_WORDS ? `(minimum ${MIN_WORDS})` : ''}</p>
+              <p className={'text-sm mt-1 text-gray-600'}>Words: {contentWordCount}</p>
 
               {/* Policy */}
               <div className="bg-orange-50 border border-orange-200 rounded p-4">
