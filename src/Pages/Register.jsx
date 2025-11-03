@@ -75,7 +75,7 @@ export default function Register({ categories = [] }) {
       emailRef.current = formData.email;
       setStage('otp');
       setSecondsLeft(120);
-      setResendCooldown(30);
+      setResendCooldown(0);
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Something went wrong');
     } finally {
@@ -115,11 +115,11 @@ export default function Register({ categories = [] }) {
   };
 
   const handleResend = async () => {
-    if (resendCooldown > 0) return;
+    if (secondsLeft > 0) return;
     try {
       await axios.post(`${prodServerUrl}/auth/register-otp/resend`, { email: emailRef.current });
       setSecondsLeft(120);
-      setResendCooldown(30);
+      setResendCooldown(0);
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Could not resend');
     }
@@ -280,10 +280,14 @@ export default function Register({ categories = [] }) {
                     placeholder="______"
                     autoFocus
                   />
-                  <div className="mt-2 text-sm text-gray-600 flex items-center gap-2">
+                <div className="mt-2 text-sm text-gray-600 flex items-center gap-2">
                     <span>Expires in {Math.floor(secondsLeft/60)}:{String(secondsLeft%60).padStart(2,'0')}</span>
-                    <span aria-hidden>|</span>
-                    <button type="button" onClick={handleResend} disabled={resendCooldown>0} className="text-[#C96442] disabled:text-gray-400">{resendCooldown>0?`Resend in ${resendCooldown}s`:'Resend code'}</button>
+                    {secondsLeft === 0 ? (
+                      <>
+                        <span aria-hidden>|</span>
+                        <button type="button" onClick={handleResend} className="text-[#C96442]">Resend code</button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex justify-end gap-3">
