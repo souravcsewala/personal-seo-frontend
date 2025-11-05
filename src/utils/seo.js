@@ -1,6 +1,16 @@
+import { siteBaseUrl } from '../global/server';
+
+function getBaseUrl() {
+  try {
+    return siteBaseUrl;
+  } catch (_) {
+    return 'http://localhost:3000';
+  }
+}
+
 export const SITE = {
   name: 'SEOHub',
-  baseUrl: 'http://localhost:3000',
+  baseUrl: getBaseUrl(),
   defaultTitle: 'SEOHub - SEO Community Forum',
   defaultDescription:
     'Join SEOHub to discover trends, share insights, and learn SEO best practices from the community.',

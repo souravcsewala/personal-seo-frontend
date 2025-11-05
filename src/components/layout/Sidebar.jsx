@@ -39,6 +39,7 @@ export default function Sidebar() {
   const [categories, setCategories] = useState([]);
   const [allCategories, setAllCategories] = useState([]);
   const [trendingItems, setTrendingItems] = useState([]);
+  // Removed inline followers/following preview; we link to a dedicated page instead
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +64,8 @@ export default function Sidebar() {
     loadData();
     return () => { cancelled = true; };
   }, []);
+
+  // No social preview fetching here
 
   return (
     <>
@@ -122,20 +125,36 @@ export default function Sidebar() {
           </Link>
           
           {isLoggedIn && (
-            <Link 
-              href="/profile" 
-              onClick={handleLinkClick}
-              className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                isActive('/profile') 
-                  ? 'bg-[#C96442]/10 text-[#C96442]' 
-                  : 'text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span className="font-medium">Profile</span>
-            </Link>
+            <>
+              <Link 
+                href="/profile" 
+                onClick={handleLinkClick}
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                  isActive('/profile') 
+                    ? 'bg-[#C96442]/10 text-[#C96442]' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="font-medium">Profile</span>
+              </Link>
+              <Link 
+                href="/network" 
+                onClick={handleLinkClick}
+                className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
+                  isActive('/network') 
+                    ? 'bg-[#C96442]/10 text-[#C96442]' 
+                    : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m9-6.13a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <span className="font-medium">Your Network</span>
+              </Link>
+            </>
           )}
 
           {!isAdmin && (
@@ -156,6 +175,8 @@ export default function Sidebar() {
           )}
 
         </div>
+
+        {/* Your Network preview removed; use the link above */}
 
         {/* Create Content Section */}
         <div>
@@ -312,8 +333,11 @@ export default function Sidebar() {
         </div>
         )}
 
+        {/* Your Network preview removed on desktop; use Your Network link above */}
+
         {/* Mobile-only content */}
         <div className="lg:hidden space-y-6 pt-8 border-t border-gray-200">
+          {/* Your Network preview removed on mobile as well */}
           {/* Popular Categories */}
           <div>
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">

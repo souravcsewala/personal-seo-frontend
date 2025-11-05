@@ -38,6 +38,10 @@ export default function Home({ initialFeed = [] }) {
   const [announcement, setAnnouncement] = useState(null);
   const [announcementList, setAnnouncementList] = useState([]);
   const [announcementIndex, setAnnouncementIndex] = useState(0);
+  const [followingOptions, setFollowingOptions] = useState([]);
+  const [followingLoading, setFollowingLoading] = useState(false);
+  const [selectedFollowingId, setSelectedFollowingId] = useState('all');
+  
 
   console.log("auth",auth.accessToken)
 
@@ -61,7 +65,9 @@ export default function Home({ initialFeed = [] }) {
         const url = isLoggedIn ? `${prodServerUrl}/feed` : `${prodServerUrl}/feed/public`;
         const headers = isLoggedIn ? { 'x-auth-token': auth.accessToken } : {};
         console.log("headers",headers)
-        const { data } = await axios.get(url, { headers, params: { limit: 30, page: 1 } });
+        const params = { limit: 30, page: 1 };
+        if (isLoggedIn && selectedFollowingId && selectedFollowingId !== 'all') params.authorId = selectedFollowingId;
+        const { data } = await axios.get(url, { headers, params });
         const items = Array.isArray(data?.data) ? data.data : [];
         setFeed(items);
         setHasMore(!!data?.pagination?.hasMore);
@@ -91,7 +97,7 @@ export default function Home({ initialFeed = [] }) {
     }
     loadInitial();
     return () => { mounted = false; };
-  }, [isLoggedIn, auth?.accessToken, initialFeed]);
+  }, [isLoggedIn, auth?.accessToken, initialFeed, selectedFollowingId]);
 
   // initialize saved keys
   useEffect(() => {
@@ -139,6 +145,28 @@ export default function Home({ initialFeed = [] }) {
     loadTrending();
     return () => { mounted = false; };
   }, []);
+
+  // Load following list for filter (when logged in)
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFollowing() {
+      try {
+        if (!isLoggedIn || !auth?.userId) { setFollowingOptions([]); return; }
+        setFollowingLoading(true);
+        const { data } = await axios.get(`${prodServerUrl}/users/${encodeURIComponent(auth.userId)}/following`, { params: { limit: 200 } });
+        if (cancelled) return;
+        const arr = Array.isArray(data?.data) ? data.data : [];
+        setFollowingOptions(arr);
+      } catch (_) {
+        if (cancelled) return;
+        setFollowingOptions([]);
+      } finally {
+        if (!cancelled) setFollowingLoading(false);
+      }
+    }
+    loadFollowing();
+    return () => { cancelled = true; };
+  }, [isLoggedIn, auth?.userId]);
 
   // Helpers for announcements
   const isActiveWindow = (a) => {
@@ -274,7 +302,9 @@ export default function Home({ initialFeed = [] }) {
       const url = isLoggedIn ? `${prodServerUrl}/feed` : `${prodServerUrl}/feed/public`;
       const headers = isLoggedIn ? { 'x-auth-token': auth.accessToken } : {};
       const nextPage = page + 1;
-      const { data } = await axios.get(url, { headers, params: { limit: 30, page: nextPage } });
+      const params = { limit: 30, page: nextPage };
+      if (isLoggedIn && selectedFollowingId && selectedFollowingId !== 'all') params.authorId = selectedFollowingId;
+      const { data } = await axios.get(url, { headers, params });
       console.log(data)
       const items = Array.isArray(data?.data) ? data.data : [];
       setFeed(prev => [...prev, ...items]);
@@ -818,6 +848,25 @@ export default function Home({ initialFeed = [] }) {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">What are you looking for?</h3>
             <div className="space-y-3">
+              {isLoggedIn && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Following</label>
+                  {Array.isArray(followingOptions) && followingOptions.length > 0 ? (
+                    <select
+                      value={selectedFollowingId}
+                      onChange={(e) => setSelectedFollowingId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
+                    >
+                      <option value="all">All</option>
+                      {followingOptions.map((u, idx) => (
+                        <option key={u._id || idx} value={u._id || ''}>{u.fullname || 'Member'}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-sm text-gray-500">You do not follow anyone yet.</div>
+                  )}
+                </div>
+              )}
               <button 
                 onClick={() => {
                   setSelectedContentType(null);

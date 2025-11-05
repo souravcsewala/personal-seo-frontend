@@ -29,6 +29,7 @@ export default function BlogDetail({ initialBlog }) {
   const [recommended, setRecommended] = useState([]);
   const [isSaved, setIsSaved] = useState(false);
   const [blogEdit, setBlogEdit] = useState({ editing: false, saving: false, deleting: false, title: '', content: '' });
+  const [followInfo, setFollowInfo] = useState({ loading: false, isFollowing: false, followers: 0, following: 0 });
   const QuillEditor = dynamic(() => import('../components/common/QuillEditor'), { ssr: false });
   const titleInputRef = useRef(null);
 
@@ -127,6 +128,49 @@ export default function BlogDetail({ initialBlog }) {
     load();
     return () => { mounted = false; };
   }, [slug, initialBlog]);
+
+  // Load follow stats for the author
+  useEffect(() => {
+    const authorId = blog?.authorId || (initialBlog && (initialBlog.author?._id || initialBlog.author));
+    if (!authorId) return;
+    let cancelled = false;
+    async function loadFollow() {
+      try {
+        setFollowInfo((p) => ({ ...p, loading: true }));
+        const headers = (auth?.isAuthenticated && auth?.accessToken) ? { 'x-auth-token': auth.accessToken } : {};
+        const { data } = await axios.get(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow-stats`, { headers });
+        const d = data?.data || {};
+        if (cancelled) return;
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      } catch (_) {
+        if (cancelled) return;
+        setFollowInfo((p) => ({ ...p, loading: false }));
+      }
+    }
+    loadFollow();
+    return () => { cancelled = true; };
+  }, [blog?.authorId, initialBlog]);
+
+  const handleToggleFollowAuthor = async () => {
+    const authorId = blog?.authorId || (initialBlog && (initialBlog.author?._id || initialBlog.author));
+    if (!authorId) return;
+    if (!isAuthed) { router.push('/login'); return; }
+    try {
+      setFollowInfo((p) => ({ ...p, loading: true }));
+      if (followInfo.isFollowing) {
+        const { data } = await axios.delete(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow`, { headers: { 'x-auth-token': auth.accessToken } });
+        const d = data?.data || {};
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      } else {
+        const { data } = await axios.post(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow`, {}, { headers: { 'x-auth-token': auth.accessToken } });
+        const d = data?.data || {};
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      }
+    } catch (err) {
+      setFollowInfo((p) => ({ ...p, loading: false }));
+      alert(err?.response?.data?.message || 'Failed to update follow');
+    }
+  };
 
   // Prefetch replies for all loaded comments so they appear without toggling
   useEffect(() => {
@@ -344,7 +388,7 @@ export default function BlogDetail({ initialBlog }) {
         <main className={`flex-1 p-6 px-2 transition-all duration-300 ease-in-out ${
           sidebarOpen ? 'lg:ml-64 ml-0' : 'ml-0'
         }`}>
-          <div className="max-w-5xl mx-4xl">
+          <div className="max-w-4xl mx-auto">
             {/* Back button */}
             <button
               onClick={() => router.back()}
@@ -378,6 +422,21 @@ export default function BlogDetail({ initialBlog }) {
                       {blog.category}
                     </span>
                   )}
+                  {(() => {
+                    const currentUserId = auth?.userId;
+                    const isOwner = !!currentUserId && String(blog.authorId || '') === String(currentUserId || '');
+                    if (isOwner) return null;
+                    return (
+                      <button
+                        onClick={handleToggleFollowAuthor}
+                        disabled={followInfo.loading}
+                        className={`text-sm font-medium px-3 py-1.5 rounded-lg border cursor-pointer ${followInfo.isFollowing ? 'bg-gray-100 text-gray-800 border-gray-300' : 'bg-[#C96442] text-white border-[#C96442] hover:bg-[#C96442]/90'}`}
+                        aria-label={followInfo.isFollowing ? 'Unfollow author' : 'Follow author'}
+                      >
+                        {followInfo.loading ? '...' : (followInfo.isFollowing ? 'Following' : 'Follow')}
+                      </button>
+                    );
+                  })()}
                   {(() => {
                     const currentUserId = auth?.userId;
                     const isOwner = !!currentUserId && String(blog.authorId || '') === String(currentUserId || '');
@@ -576,7 +635,7 @@ export default function BlogDetail({ initialBlog }) {
                   const name = comment?.user?.fullname || "User";
                   const when = comment?.createdAt ? new Date(comment.createdAt).toLocaleString() : '';
                   const canEdit = isAuthed && (auth?.userId && String(comment?.user?._id || comment?.user) === String(auth.userId));
-                  const canReplyToComment = isAuthed && (auth?.userId && String(comment?.user?._id || comment?.user) !== String(auth.userId));
+                  const canReplyToComment = isAuthed;
                   const [editing, setEditing] = [false, () => {}];
                   return (
                     <div key={comment?._id || comment?.id || idx} className="flex space-x-4">

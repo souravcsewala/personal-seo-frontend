@@ -91,6 +91,7 @@ export default function QuestionDetail() {
   const { sidebarOpen } = useApp();
   const [questionEdit, setQuestionEdit] = useState({ editing: false, saving: false, deleting: false, title: '', description: '' });
   const QuillEditor = dynamic(() => import('../components/common/QuillEditor'), { ssr: false });
+  const [followInfo, setFollowInfo] = useState({ loading: false, isFollowing: false, followers: 0, following: 0 });
 
   useEffect(() => {
     if (!questionId) return;
@@ -137,6 +138,49 @@ export default function QuestionDetail() {
     loadAll();
     return () => { mounted = false; };
   }, [questionId, fallbackId]);
+
+  // Load follow stats for question author
+  useEffect(() => {
+    const authorId = question?.author && (question.author._id || question.author);
+    if (!authorId) return;
+    let cancelled = false;
+    async function loadFollow() {
+      try {
+        setFollowInfo((p) => ({ ...p, loading: true }));
+        const headers = (auth?.isAuthenticated && auth?.accessToken) ? { 'x-auth-token': auth.accessToken } : {};
+        const { data } = await axios.get(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow-stats`, { headers });
+        const d = data?.data || {};
+        if (cancelled) return;
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      } catch (_) {
+        if (cancelled) return;
+        setFollowInfo((p) => ({ ...p, loading: false }));
+      }
+    }
+    loadFollow();
+    return () => { cancelled = true; };
+  }, [question?.author]);
+
+  const handleToggleFollowAuthor = async () => {
+    const authorId = question?.author && (question.author._id || question.author);
+    if (!authorId) return;
+    if (!isLoggedIn) { router.push('/login'); return; }
+    try {
+      setFollowInfo((p) => ({ ...p, loading: true }));
+      if (followInfo.isFollowing) {
+        const { data } = await axios.delete(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow`, { headers: { 'x-auth-token': auth.accessToken } });
+        const d = data?.data || {};
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      } else {
+        const { data } = await axios.post(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow`, {}, { headers: { 'x-auth-token': auth.accessToken } });
+        const d = data?.data || {};
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      }
+    } catch (err) {
+      setFollowInfo((p) => ({ ...p, loading: false }));
+      alert(err?.response?.data?.message || 'Failed to update follow');
+    }
+  };
 
   // Prefetch replies for all loaded answers so they are visible to everyone without toggling
   useEffect(() => {
@@ -200,12 +244,20 @@ export default function QuestionDetail() {
   const handleAcceptAnswer = async (answerId) => {
     if (!isLoggedIn) { router.push('/login'); return; }
     try {
-      await axios.post(
+      const { data } = await axios.post(
         `${prodServerUrl}/questions/answers/${encodeURIComponent(answerId)}/accept`,
         {},
         { headers: { 'x-auth-token': auth.accessToken } }
       );
-      setAnswers((prev) => prev.map((a) => ({ ...a, isAccepted: String(a._id) === String(answerId) })));
+      const toggled = !!(data && data.data && data.data.isAccepted);
+      setAnswers((prev) => {
+        if (toggled) {
+          // Mark only this answer as accepted
+          return prev.map((a) => ({ ...a, isAccepted: String(a._id) === String(answerId) }));
+        }
+        // Unaccept: clear accepted flag for all
+        return prev.map((a) => ({ ...a, isAccepted: false }));
+      });
     } catch (err) {
       alert(err?.response?.data?.message || 'Failed to accept answer');
     }
@@ -391,10 +443,25 @@ export default function QuestionDetail() {
                   <h2 className="text-lg font-semibold text-gray-900">{question.author?.fullname || 'Member'}</h2>
                   <p className="text-gray-500 text-sm">{new Date(question.createdAt).toLocaleString()}</p>
                 </div>
-                <div className="ml-auto">
+                <div className="ml-auto flex items-center space-x-2">
                   <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
                     Question
                   </span>
+                  {(() => {
+                    const currentUserId = auth?.userId;
+                    const ownerId = question?.author && (question.author._id || question.author);
+                    const isOwner = isLoggedIn && String(ownerId || '') === String(currentUserId || '');
+                    if (isOwner) return null;
+                    return (
+                      <button
+                        onClick={handleToggleFollowAuthor}
+                        disabled={followInfo.loading}
+                        className={`text-sm font-medium px-3 py-1.5 rounded-lg border cursor-pointer ${followInfo.isFollowing ? 'bg-gray-100 text-gray-800 border-gray-300' : 'bg-[#C96442] text-white border-[#C96442] hover:bg-[#C96442]/90'}`}
+                      >
+                        {followInfo.loading ? '...' : (followInfo.isFollowing ? 'Following' : 'Follow')}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
               
@@ -586,14 +653,20 @@ export default function QuestionDetail() {
                             </svg>
                             <span>{answer.likes || 0}</span>
                           </button>
-                          {!answer.isAccepted && (
-                            <button 
-                              onClick={() => handleAcceptAnswer(answer._id)}
-                              className="text-green-600 hover:text-green-800 text-sm font-medium transition-colors"
-                            >
-                              Accept Answer
-                            </button>
-                          )}
+                          {(() => {
+                            const currentUserId = auth?.userId;
+                            const questionOwnerId = question?.author && (question.author._id || question.author);
+                            const canAccept = isLoggedIn && String(questionOwnerId || '') === String(currentUserId || '');
+                            if (!canAccept) return null;
+                            return (
+                              <button 
+                                onClick={() => handleAcceptAnswer(answer._id)}
+                                className={`${answer.isAccepted ? 'text-red-600 hover:text-red-800' : 'text-green-600 hover:text-green-800'} text-sm font-medium transition-colors`}
+                              >
+                                {answer.isAccepted ? 'Unaccept Answer' : 'Accept Answer'}
+                              </button>
+                            );
+                          })()}
                           {(() => {
                             const currentUserId = auth?.userId;
                             const answerAuthorId = answer?.author && (answer.author._id || answer.author);

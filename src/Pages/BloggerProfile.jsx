@@ -9,6 +9,7 @@ import { useApp } from '../context/AppContext';
 import Link from 'next/link';
 import axios from 'axios';
 import { prodServerUrl } from '../global/server';
+import { useSelector } from 'react-redux';
 
 export default function BloggerProfile() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function BloggerProfile() {
   const { sidebarOpen } = useApp();
 
   const [items, setItems] = useState([]);
+  const [questionItems, setQuestionItems] = useState([]);
   const [author, setAuthor] = useState({ name: '', avatar: '' });
   const [authorId, setAuthorId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,6 +26,9 @@ export default function BloggerProfile() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const limit = 100;
+  const auth = useSelector((s) => s.auth);
+  const [followInfo, setFollowInfo] = useState({ loading: false, isFollowing: false, followers: 0, following: 0 });
+  const [activeTab, setActiveTab] = useState('blogs');
 
   if (!params) {
     return <div>Loading...</div>;
@@ -95,6 +100,23 @@ export default function BloggerProfile() {
       if (pageToLoad === 1) {
         const a = mapped[0]?.author;
         if (a && (a.name || a.avatar)) setAuthor(a);
+        // also load questions for this author for the Questions tab
+        try {
+          const qRes = await axios.get(`${prodServerUrl}/questions/by-author/${encodeURIComponent(useAuthorId)}`, { params: { page: 1, limit } });
+          const qArr = Array.isArray(qRes?.data?.data) ? qRes.data.data : [];
+          const mappedQ = qArr.map((q) => ({
+            id: q?._id,
+            slug: q?.slug,
+            title: q?.title || '',
+            description: q?.description || '',
+            publishDate: q?.createdAt ? new Date(q.createdAt).toLocaleDateString() : '',
+            comments: Array.isArray(q?.answers) ? q.answers.length : 0,
+            author: {
+              name: q?.author?.fullname || decodedName,
+            }
+          }));
+          setQuestionItems(mappedQ);
+        } catch (_) { setQuestionItems([]); }
       }
       const total = Number(data?.pagination?.total || 0);
       const nextHasMore = pageToLoad * limit < total;
@@ -116,6 +138,47 @@ export default function BloggerProfile() {
     if (decodedName) fetchPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decodedName]);
+
+  // Load follow stats when authorId is known
+  useEffect(() => {
+    if (!authorId) return;
+    let cancelled = false;
+    async function loadFollow() {
+      try {
+        setFollowInfo((p) => ({ ...p, loading: true }));
+        const headers = (auth?.isAuthenticated && auth?.accessToken) ? { 'x-auth-token': auth.accessToken } : {};
+        const { data } = await axios.get(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow-stats`, { headers });
+        const d = data?.data || {};
+        if (cancelled) return;
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      } catch (_) {
+        if (cancelled) return;
+        setFollowInfo((p) => ({ ...p, loading: false }));
+      }
+    }
+    loadFollow();
+    return () => { cancelled = true; };
+  }, [authorId]);
+
+  const handleToggleFollowAuthor = async () => {
+    if (!authorId) return;
+    if (!(auth?.isAuthenticated && auth?.accessToken)) { try { router.push('/login'); } catch (_) {} return; }
+    try {
+      setFollowInfo((p) => ({ ...p, loading: true }));
+      if (followInfo.isFollowing) {
+        const { data } = await axios.delete(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow`, { headers: { 'x-auth-token': auth.accessToken } });
+        const d = data?.data || {};
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      } else {
+        const { data } = await axios.post(`${prodServerUrl}/users/${encodeURIComponent(authorId)}/follow`, {}, { headers: { 'x-auth-token': auth.accessToken } });
+        const d = data?.data || {};
+        setFollowInfo({ loading: false, isFollowing: !!d.isFollowing, followers: Number(d.followers || 0), following: Number(d.following || 0) });
+      }
+    } catch (err) {
+      setFollowInfo((p) => ({ ...p, loading: false }));
+      alert(err?.response?.data?.message || 'Failed to update follow');
+    }
+  };
 
   const totalLikes = useMemo(() => items.reduce((sum, p) => sum + (p.likes || 0), 0), [items]);
   const totalComments = useMemo(() => items.reduce((sum, p) => sum + (p.comments || 0), 0), [items]);
@@ -151,6 +214,17 @@ export default function BloggerProfile() {
                 <div>
                   <h1 className="text-3xl font-bold text-gray-900 mb-1">{author.name || decodedName}</h1>
                   <p className="text-gray-600 mb-3">Posts authored by {author.name || decodedName}</p>
+                  <div className="flex items-center space-x-3">
+                    <span className="text-sm text-gray-600">Followers: {followInfo.followers}</span>
+                    <span className="text-sm text-gray-600">Following: {followInfo.following}</span>
+                    <button
+                      onClick={handleToggleFollowAuthor}
+                      disabled={followInfo.loading}
+                      className={`text-sm font-medium px-3 py-1.5 rounded-lg border cursor-pointer ${followInfo.isFollowing ? 'bg-gray-100 text-gray-800 border-gray-300' : 'bg-[#C96442] text-white border-[#C96442] hover:bg-[#C96442]/90'}`}
+                    >
+                      {followInfo.loading ? '...' : (followInfo.isFollowing ? 'Following' : 'Follow')}
+                    </button>
+                  </div>
                   {/* <div className="flex flex-wrap gap-4 text-sm text-gray-500">
                     <span>📍 N/A</span>
                     <span>🌐 <span className="text-gray-400">N/A</span></span>
@@ -158,34 +232,27 @@ export default function BloggerProfile() {
                   </div> */}
                 </div>
               </div>
-              <div className="mt-6 pt-6 border-t border-gray-200 flex justify-around text-center">
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{items.length}</p>
-                  <p className="text-gray-500">Posts</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{totalLikes}</p>
-                  <p className="text-gray-500">Likes</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">{totalComments}</p>
-                  <p className="text-gray-500">Comments</p>
-                </div>
-              </div>
+              {/* author stats hidden as requested */}
             </div>
 
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Posts by {author.name || decodedName}</h2>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-2xl font-bold text-gray-900">Authored by {author.name || decodedName}</h2>
+                <div className="flex space-x-2">
+                  <button onClick={() => setActiveTab('blogs')} className={`px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${activeTab==='blogs' ? 'bg-[#C96442] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Blogs</button>
+                  <button onClick={() => setActiveTab('questions')} className={`px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${activeTab==='questions' ? 'bg-[#C96442] text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Questions</button>
+                </div>
+              </div>
 
               {error && (
                 <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-red-700">{error}</div>
               )}
 
-              {items.length === 0 && !loading ? (
+              {activeTab === 'blogs' && items.length === 0 && !loading ? (
                 <div className="text-center py-12">
                   <p className="text-gray-500">No posts found for this author.</p>
                 </div>
-              ) : (
+              ) : activeTab === 'blogs' ? (
                 <div className="space-y-6">
                   {items.map((post) => (
                     <article key={post.id} className="border-b border-gray-200 pb-6 last:border-b-0 last:pb-0">
@@ -250,6 +317,47 @@ export default function BloggerProfile() {
                       >
                         {loading ? 'Loading...' : 'Load More'}
                       </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {questionItems.map((q) => (
+                    <article key={q.id} className="border-b border-gray-200 pb-6 last:border-b-0 last:pb-0">
+                      <div className="flex items-center space-x-3 mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2">
+                            <span className="font-medium text-gray-900">{q.author.name}</span>
+                            <span className="text-gray-400">•</span>
+                            <span className="text-gray-500">{q.publishDate}</span>
+                            <span className="text-gray-400">•</span>
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">Question</span>
+                          </div>
+                        </div>
+                      </div>
+                      <h3
+                        className="text-xl font-bold text-gray-900 mb-3 cursor-pointer hover:text-[#C96442] transition-colors"
+                        onClick={() => {
+                          const slug = q.slug || q.id;
+                          if (slug) router.push(`/question/${encodeURIComponent(slug)}`);
+                        }}
+                      >
+                        {q.title}
+                      </h3>
+                      <div className="text-gray-700 leading-relaxed prose max-w-none mb-4" dangerouslySetInnerHTML={{ __html: q.description }} />
+                      <div className="flex items-center space-x-6 text-gray-500">
+                        <div className="flex items-center space-x-2">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          <span>{q.comments || 0}</span>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                  {questionItems.length === 0 && (
+                    <div className="text-center py-12">
+                      <p className="text-gray-500">No questions found for this author.</p>
                     </div>
                   )}
                 </div>

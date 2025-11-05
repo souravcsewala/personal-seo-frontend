@@ -4,4 +4,11 @@
        const prodServerUrl="https://personal-seo-backend.onrender.com/api"
 
 
-export { prodServerUrl };
+      // Frontend site base URLs (no NEXT_PUBLIC env usage)
+      const siteProdUrl = "https://blog.souravengineerwala.org";
+      const siteDevUrl = "http://localhost:3000";
+      const siteBaseUrl = (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'production')
+        ? siteProdUrl
+        : siteDevUrl;
+
+export { prodServerUrl, siteBaseUrl };
