@@ -1,8 +1,11 @@
 'use client';
 
+// Force dynamic rendering to prevent prerender errors with client hooks
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useSelector } from 'react-redux';
+import { useSelector } from '../../../../redux/useSelectorSafe';
 import axios from 'axios';
 import { prodServerUrl } from '../../../../global/server';
 import { useApp } from '../../../../context/AppContext';
@@ -15,7 +18,7 @@ export default function AdminUserDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { sidebarOpen } = useApp();
-  const auth = useSelector((s) => s.auth);
+  const auth = useSelector((s) => s.auth, { isAuthenticated: false, accessToken: null });
   useEffect(() => {
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
@@ -48,6 +51,7 @@ export default function AdminUserDetailPage() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [savingRole, setSavingRole] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -74,6 +78,23 @@ export default function AdminUserDetailPage() {
     return () => { mounted = false; };
   }, [userId, token]);
 
+  const toggleRole = async () => {
+    try {
+      if (!user?._id) return;
+      setSavingRole(true);
+      const current = String(user.role || 'user').toLowerCase();
+      const nextRole = current === 'admin' ? 'user' : 'admin';
+      await axios.put(`${prodServerUrl}/admin/users/${encodeURIComponent(user._id)}/role`, { role: nextRole }, {
+        headers: { 'x-auth-token': token },
+      });
+      setUser(prev => prev ? { ...prev, role: nextRole } : prev);
+    } catch (e) {
+      setError(e?.response?.data?.message || e.message || 'Failed to update role');
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -99,7 +120,7 @@ export default function AdminUserDetailPage() {
             {!!error && <div className="mb-6 text-red-600">{error}</div>}
 
             {!!user && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+              <div className="bg-white border border-gray-200 p-6 mb-6">
                 <div className="flex items-start gap-4">
                   {user?.profileimage?.signedUrl || user?.profileimage?.url ? (
                     <Image src={user.profileimage.signedUrl || user.profileimage.url} alt={user?.fullname || 'User'} width={80} height={80} className="w-20 h-20 rounded-full" />
@@ -113,6 +134,19 @@ export default function AdminUserDetailPage() {
                       <div>
                         <h1 className="text-2xl font-bold text-gray-900">{user.fullname}</h1>
                         <div className="text-gray-500">{user.email}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${String(user.role).toLowerCase()==='admin'?'bg-purple-100 text-purple-700':'bg-gray-100 text-gray-700'}`}>
+                          {String(user.role || 'user').toUpperCase()}
+                        </span>
+                        <button
+                          onClick={toggleRole}
+                          disabled={savingRole}
+                          className="bg-[#C96442] hover:bg-[#A54F35] disabled:opacity-60 text-white px-3 py-1.5 transition-colors cursor-pointer text-sm"
+                          title="Toggle role between Admin and User"
+                        >
+                          {savingRole ? 'Saving…' : (String(user.role || 'user').toLowerCase()==='admin' ? 'Make User' : 'Make Admin')}
+                        </button>
                       </div>
                     </div>
                     {user?.bio && <div className="mt-3 text-gray-700">{user.bio}</div>}
@@ -141,7 +175,7 @@ export default function AdminUserDetailPage() {
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {posts.map((post) => (
-                  <article key={post._id} className="bg-white rounded-lg border border-gray-200 p-5 flex flex-col h-full">
+                  <article key={post._id} className="bg-white border border-gray-200 p-5 flex flex-col h-full">
                     <div className="flex-1">
                       <div className="flex items-center space-x-2 mb-2">
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">Blog</span>
@@ -154,7 +188,7 @@ export default function AdminUserDetailPage() {
                         </span>
                       </div>
                       {post.signedUrl || post.image ? (
-                        <img src={post.signedUrl || post.image} alt={post.imageAlt || post.title} className="w-full h-36 object-cover rounded mb-3" />
+                        <img src={post.signedUrl || post.image} alt={post.imageAlt || post.title} className="w-full h-36 object-cover mb-3" />
                       ) : null}
                       <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{post.title}</h3>
                     </div>

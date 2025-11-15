@@ -1,9 +1,12 @@
 'use client';
 
+// Force dynamic rendering to prevent prerender errors with client hooks
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { prodServerUrl } from '../../../global/server';
-import { useSelector } from 'react-redux';
+import { useSelector } from '../../../redux/useSelectorSafe';
 import { useRouter } from 'next/navigation';
 import { useApp } from '../../../context/AppContext';
 import Header from '../../../components/layout/Header';
@@ -12,79 +15,79 @@ import Link from 'next/link';
 import Image from 'next/image';
 
 export default function AdminUsersPage() {
-  const { sidebarOpen } = useApp();
-  const auth = useSelector((s) => s.auth);
-  const router = useRouter();
-  useEffect(() => {
-    try {
-      const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
-      const stored = raw ? JSON.parse(raw) : null;
-      const token = auth?.accessToken || stored?.accessToken;
-      const role = String(auth?.role || stored?.role || stored?.user?.role || '').toLowerCase();
-      if (!token) {
-        router.push('/login');
-        return;
-      }
-      if (role !== 'admin') {
-        router.push('/permission-denied');
-        return;
-      }
-    } catch (_) {
-      router.push('/login');
-    }
-  }, [auth, router]);
-  const [search, setSearch] = useState('');
-  const [users, setUsers] = useState([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [limit] = useState(12);
-  const token = useMemo(() => {
-    try {
-      const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
-      const stored = raw ? JSON.parse(raw) : null;
-      return auth?.accessToken || stored?.accessToken || '';
-    } catch (_) { return ''; }
-  }, [auth]);
+ const { sidebarOpen } = useApp();
+ const auth = useSelector((s) => s.auth, { isAuthenticated: false, accessToken: null });
+ const router = useRouter();
+ useEffect(() => {
+  try {
+   const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
+   const stored = raw ? JSON.parse(raw) : null;
+   const token = auth?.accessToken || stored?.accessToken;
+   const role = String(auth?.role || stored?.role || stored?.user?.role || '').toLowerCase();
+   if (!token) {
+    router.push('/login');
+    return;
+   }
+   if (role !== 'admin') {
+    router.push('/permission-denied');
+    return;
+   }
+  } catch (_) {
+   router.push('/login');
+  }
+ }, [auth, router]);
+ const [search, setSearch] = useState('');
+ const [users, setUsers] = useState([]);
+ const [page, setPage] = useState(1);
+ const [total, setTotal] = useState(0);
+ const [limit] = useState(12);
+ const token = useMemo(() => {
+  try {
+   const raw = typeof window !== 'undefined' ? localStorage.getItem('authState') : null;
+   const stored = raw ? JSON.parse(raw) : null;
+   return auth?.accessToken || stored?.accessToken || '';
+  } catch (_) { return ''; }
+ }, [auth]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    async function load() {
-      try {
-        const params = { page, limit, search: search || undefined };
-        const resp = await axios.get(`${prodServerUrl}/admin/users`, {
-          params,
-          headers: { 'x-auth-token': token },
-          signal: controller.signal,
-        });
-        const { data, pagination } = resp.data || {};
-        setUsers(Array.isArray(data) ? data : []);
-        if (pagination) { setTotal(pagination.total || 0); }
-      } catch (_) {}
-    }
-    if (token) load();
-    return () => controller.abort();
-  }, [token, page, search]);
+ useEffect(() => {
+  const controller = new AbortController();
+  async function load() {
+   try {
+    const params = { page, limit, search: search || undefined };
+    const resp = await axios.get(`${prodServerUrl}/admin/users`, {
+     params,
+     headers: { 'x-auth-token': token },
+     signal: controller.signal,
+    });
+    const { data, pagination } = resp.data || {};
+    setUsers(Array.isArray(data) ? data : []);
+    if (pagination) { setTotal(pagination.total || 0); }
+   } catch (_) {}
+  }
+  if (token) load();
+  return () => controller.abort();
+ }, [token, page, search]);
 
-  const filtered = users;
+ const filtered = users;
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-      <div className="flex">
-        <Sidebar />
-        <main className={`flex-1 p-6 transition-all duration-300 ease-in-out ${
-          sidebarOpen ? 'lg:ml-64 ml-0' : 'ml-0'
-        }`}>
-          <div className="max-w-6xl mx-auto">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-              <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search users..."
-                className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
-              />
-            </div>
+ return (
+  <div className="min-h-screen bg-gray-50">
+   <Header />
+   <div className="flex">
+    <Sidebar />
+    <main className={`flex-1 p-6 transition-all duration-300 ease-in-out ${
+     sidebarOpen ? 'lg:ml-64 ml-0' : 'ml-0'
+    }`}>
+     <div className="max-w-6xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+       <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+       <input
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Search users..."
+        className="w-full sm:w-64 px-3 py-2 border border-gray-300 focus:ring-2 focus:ring-[#C96442] focus:border-transparent"
+       />
+      </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filtered.map(user => (

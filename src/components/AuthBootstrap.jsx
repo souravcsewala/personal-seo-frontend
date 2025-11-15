@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch } from '../redux/useDispatchSafe';
 import { loadAuthStateFromStorage } from '../redux/slices/authslice';
 
 export default function AuthBootstrap() {
-  const dispatch = useDispatch();
-  useEffect(() => {
-    dispatch(loadAuthStateFromStorage());
-  }, [dispatch]);
-  return null;
+ const dispatch = useDispatch();
+ useEffect(() => {
+  dispatch(loadAuthStateFromStorage());
+ }, [dispatch]);
+ return null;
 }
 
 

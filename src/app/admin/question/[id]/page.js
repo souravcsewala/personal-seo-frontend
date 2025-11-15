@@ -12,7 +12,7 @@ import { useApp } from '../../../../context/AppContext';
 import Header from '../../../../components/layout/Header';
 import Sidebar from '../../../../components/layout/Sidebar';
 
-export default function AdminPostDetailPage() {
+export default function AdminQuestionDetailPage() {
  const params = useParams();
  const router = useRouter();
  const { sidebarOpen } = useApp();
@@ -45,7 +45,7 @@ export default function AdminPostDetailPage() {
   } catch (_) { return ''; }
  }, [auth]);
 
- const [blog, setBlog] = useState(null);
+ const [question, setQuestion] = useState(null);
  const [loading, setLoading] = useState(true);
  const [error, setError] = useState('');
  const [deleting, setDeleting] = useState(false);
@@ -57,12 +57,12 @@ export default function AdminPostDetailPage() {
    setLoading(true);
    setError('');
    try {
-    const res = await axios.get(`${prodServerUrl}/blogs/${encodeURIComponent(id)}`);
+    const res = await axios.get(`${prodServerUrl}/questions/${encodeURIComponent(id)}`);
     if (!mounted) return;
-    setBlog(res?.data?.data || null);
+    setQuestion(res?.data?.data || null);
    } catch (e) {
     if (!mounted) return;
-    setError(e?.response?.data?.message || e.message || 'Failed to load post');
+    setError(e?.response?.data?.message || e.message || 'Failed to load question');
    } finally {
     if (mounted) setLoading(false);
    }
@@ -72,10 +72,10 @@ export default function AdminPostDetailPage() {
 
  const updateStatus = async (nextStatus) => {
   try {
-   await axios.put(`${prodServerUrl}/admin/blogs/${encodeURIComponent(id)}/status`, { status: nextStatus }, {
+   await axios.put(`${prodServerUrl}/questions/${encodeURIComponent(id)}`, { status: nextStatus }, {
     headers: { 'x-auth-token': token },
    });
-   setBlog(prev => prev ? { ...prev, status: nextStatus } : prev);
+   setQuestion(prev => prev ? { ...prev, status: nextStatus } : prev);
   } catch (e) {
    setError(e?.response?.data?.message || e.message || 'Failed to update status');
   }
@@ -84,21 +84,21 @@ export default function AdminPostDetailPage() {
  const handleDelete = async () => {
   try {
    if (!id) return;
-   const ok = typeof window !== 'undefined' ? window.confirm('Are you sure you want to delete this post? This action cannot be undone.') : true;
+   const ok = typeof window !== 'undefined' ? window.confirm('Are you sure you want to delete this question? This action cannot be undone.') : true;
    if (!ok) return;
    setDeleting(true);
-   await axios.delete(`${prodServerUrl}/blogs/delete-blog/${encodeURIComponent(id)}`, {
+   await axios.delete(`${prodServerUrl}/questions/${encodeURIComponent(id)}`, {
     headers: { 'x-auth-token': token },
    });
-   router.push('/admin/blog-approval');
+   router.push('/admin/question-approval');
   } catch (e) {
-   setError(e?.response?.data?.message || e.message || 'Failed to delete post');
+   setError(e?.response?.data?.message || e.message || 'Failed to delete question');
   } finally {
    setDeleting(false);
   }
  };
 
- if (!loading && (!blog || error)) {
+ if (!loading && (!question || error)) {
   return (
    <div className="min-h-screen bg-gray-50">
     <Header />
@@ -109,7 +109,7 @@ export default function AdminPostDetailPage() {
      }`}>
       <div className="max-w-4xl mx-auto bg-white border border-gray-200 p-6">
        <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">{error || 'Post not found'}</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">{error || 'Question not found'}</h1>
         <button
          onClick={() => router.back()}
          className="bg-[#C96442] hover:bg-[#A54F35] text-white px-6 py-2 transition-colors"
@@ -133,7 +133,6 @@ export default function AdminPostDetailPage() {
      sidebarOpen ? 'lg:ml-64 ml-0' : 'ml-0'
     }`}>
      <div className="max-w-4xl mx-auto bg-white border border-gray-200 p-6">
-      {/* Back Button */}
       <div className="mb-6">
        <button
         onClick={() => router.back()}
@@ -146,51 +145,43 @@ export default function AdminPostDetailPage() {
        </button>
       </div>
       {loading && <div className="mb-6 text-gray-600">Loading…</div>}
-      {!!blog && (
+      {!!question && (
        <>
         <div className="flex items-center space-x-3 mb-4">
          <div>
-          <div className="font-medium text-gray-900">{blog?.author?.fullname || 'Author'}</div>
-          <div className="text-gray-500 text-sm">{new Date(blog.createdAt).toLocaleDateString()}</div>
+          <div className="font-medium text-gray-900">{question?.author?.fullname || 'Author'}</div>
+          <div className="text-gray-500 text-sm">{new Date(question.createdAt).toLocaleDateString()}</div>
          </div>
          <span className={`ml-auto px-2 py-0.5 text-xs font-medium ${
-          (blog.status || 'pending') === 'approved' ? 'bg-green-100 text-green-800' :
-          (blog.status || 'pending') === 'rejected' ? 'bg-red-100 text-red-700' :
+          (question.status || 'pending') === 'approved' ? 'bg-green-100 text-green-800' :
+          (question.status || 'pending') === 'rejected' ? 'bg-red-100 text-red-700' :
           'bg-yellow-100 text-yellow-700'
          }`}>
-          {((blog.status || 'pending') === 'rejected' ? 'declined' : (blog.status || 'pending')).toUpperCase()}
+          {((question.status || 'pending') === 'rejected' ? 'declined' : (question.status || 'pending')).toUpperCase()}
          </span>
         </div>
 
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">{blog.title}</h1>
-        {(blog.signedUrl || blog.image) && (
-         <img src={blog.signedUrl || blog.image} alt={blog.imageAlt || blog.title} className="w-full h-64 object-cover mb-4" />
-        )}
-        {blog.metaDescription && (
-         <p className="text-gray-700 mb-4">{blog.metaDescription}</p>
-        )}
-        {!!blog.content && (
-         <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: blog.content }} />
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">{question.title || 'Question'}</h1>
+        {!!question.description && (
+         <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: question.description }} />
         )}
        </>
       )}
 
-      {!!blog && (
+      {!!question && (
        <div className="mt-8 flex flex-col gap-3">
-        {((blog.status || 'pending') === 'pending') && (
-         <>
-          <div className="flex gap-3">
-           <button onClick={() => updateStatus('approved')} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 transition-colors cursor-pointer">Approve</button>
-           <button onClick={() => updateStatus('rejected')} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 transition-colors cursor-pointer">Decline</button>
-          </div>
-         </>
+        {((question.status || 'pending') === 'pending') && (
+         <div className="flex gap-3">
+          <button onClick={() => updateStatus('approved')} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 transition-colors cursor-pointer">Approve</button>
+          <button onClick={() => updateStatus('rejected')} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 transition-colors cursor-pointer">Decline</button>
+         </div>
         )}
-        {((blog.status || 'pending') === 'approved') && (
+        {((question.status || 'pending') === 'approved') && (
          <div className="flex gap-3">
           <button onClick={() => updateStatus('rejected')} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 transition-colors cursor-pointer">Decline</button>
          </div>
         )}
-        {((blog.status || 'pending') === 'rejected') && (
+        {((question.status || 'pending') === 'rejected') && (
          <div className="flex gap-3">
           <button onClick={() => updateStatus('approved')} className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 transition-colors cursor-pointer">Approve</button>
          </div>
@@ -200,7 +191,7 @@ export default function AdminPostDetailPage() {
          disabled={deleting}
          className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2 transition-colors cursor-pointer"
         >
-         {deleting ? 'Deleting…' : 'Delete Post'}
+         {deleting ? 'Deleting…' : 'Delete Question'}
         </button>
        </div>
       )}
@@ -210,6 +201,5 @@ export default function AdminPostDetailPage() {
   </div>
  );
 }
-
 
 
